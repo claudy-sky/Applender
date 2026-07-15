@@ -37,47 +37,7 @@ class GPUTest : public ::testing::Test {
   void TearDown() override;
 };
 
-#ifdef WITH_OPENGL_BACKEND
-class GPUOpenGLTest : public GPUTest {
- public:
-  static void SetUpTestSuite()
-  {
-    GPUTest::SetUpTestSuite(GHOST_kDrawingContextTypeOpenGL,
-                            GPU_BACKEND_OPENGL,
-                            G_DEBUG_GPU | G_DEBUG_GPU_COMPILE_SHADERS | G_DEBUG_GPU_RENDERDOC);
-  }
-  static void TearDownTestSuite()
-  {
-    GPUTest::TearDownTestSuite();
-  }
-};
-
-class GPUOpenGLWorkaroundsTest : public GPUTest {
- public:
-  static void SetUpTestSuite()
-  {
-    GPUTest::SetUpTestSuite(GHOST_kDrawingContextTypeOpenGL,
-                            GPU_BACKEND_OPENGL,
-                            G_DEBUG_GPU | G_DEBUG_GPU_COMPILE_SHADERS | G_DEBUG_GPU_RENDERDOC |
-                                G_DEBUG_GPU_FORCE_WORKAROUNDS);
-  }
-  static void TearDownTestSuite()
-  {
-    GPUTest::TearDownTestSuite();
-  }
-};
-#  define GPU_OPENGL_TEST(test_name) \
-    TEST_F(GPUOpenGLTest, test_name) \
-    { \
-      test_##test_name(); \
-    } \
-    TEST_F(GPUOpenGLWorkaroundsTest, test_name) \
-    { \
-      test_##test_name(); \
-    }
-#else
-#  define GPU_OPENGL_TEST(test_name)
-#endif
+#define GPU_OPENGL_TEST(test_name)
 
 #ifdef WITH_METAL_BACKEND
 class GPUMetalTest : public GPUTest {
@@ -118,47 +78,7 @@ class GPUMetalWorkaroundsTest : public GPUTest {
 #  define GPU_METAL_TEST(test_name)
 #endif
 
-#ifdef WITH_VULKAN_BACKEND
-class GPUVulkanTest : public GPUTest {
- public:
-  static void SetUpTestSuite()
-  {
-    GPUTest::SetUpTestSuite(GHOST_kDrawingContextTypeVulkan,
-                            GPU_BACKEND_VULKAN,
-                            G_DEBUG_GPU | G_DEBUG_GPU_SHADER_DEBUG_INFO | G_DEBUG_GPU_RENDERDOC);
-  }
-  static void TearDownTestSuite()
-  {
-    GPUTest::TearDownTestSuite();
-  }
-};
-
-class GPUVulkanWorkaroundsTest : public GPUTest {
- public:
-  static void SetUpTestSuite()
-  {
-    GPUTest::SetUpTestSuite(GHOST_kDrawingContextTypeVulkan,
-                            GPU_BACKEND_VULKAN,
-                            G_DEBUG_GPU | G_DEBUG_GPU_SHADER_DEBUG_INFO | G_DEBUG_GPU_RENDERDOC |
-                                G_DEBUG_GPU_FORCE_WORKAROUNDS);
-  }
-  static void TearDownTestSuite()
-  {
-    GPUTest::TearDownTestSuite();
-  }
-};
-#  define GPU_VULKAN_TEST(test_name) \
-    TEST_F(GPUVulkanTest, test_name) \
-    { \
-      test_##test_name(); \
-    } \
-    TEST_F(GPUVulkanWorkaroundsTest, test_name) \
-    { \
-      test_##test_name(); \
-    }
-#else
-#  define GPU_VULKAN_TEST(test_name)
-#endif
+#define GPU_VULKAN_TEST(test_name)
 
 #define GPU_TEST(test_name) \
   GPU_OPENGL_TEST(test_name) \

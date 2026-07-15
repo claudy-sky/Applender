@@ -26,10 +26,6 @@
 #  include "GHOST_ContextMTL.hh"
 #endif
 
-#ifdef WITH_VULKAN_BACKEND
-#  include "GHOST_ContextVK.hh"
-#endif
-
 #ifdef WITH_INPUT_NDOF
 #  include "GHOST_NDOFManagerCocoa.hh"
 #endif
@@ -772,18 +768,6 @@ GHOST_IContext *GHOST_SystemCocoa::createOffscreenContext(GHOST_GPUSettings gpu_
       GHOST_CONTEXT_PARAMS_FROM_GPU_SETTINGS_OFFSCREEN(gpu_settings);
 
   switch (gpu_settings.context_type) {
-#ifdef WITH_VULKAN_BACKEND
-    case GHOST_kDrawingContextTypeVulkan: {
-      GHOST_Context *context = new GHOST_ContextVK(
-          context_params_offscreen, nullptr, 1, 2, gpu_settings.preferred_device);
-      if (context->initializeDrawingContext()) {
-        return context;
-      }
-      delete context;
-      return nullptr;
-    }
-#endif
-
 #ifdef WITH_METAL_BACKEND
     case GHOST_kDrawingContextTypeMetal: {
       GHOST_Context *context = new GHOST_ContextMTL(context_params_offscreen, nullptr, nullptr);

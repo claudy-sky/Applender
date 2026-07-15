@@ -73,24 +73,6 @@ bool wm_xr_init(bContext *C)
   {
     Vector<GHOST_TXrGraphicsBinding> gpu_bindings_candidates;
     switch (GPU_backend_get_type()) {
-#ifdef WITH_OPENGL_BACKEND
-      case GPU_BACKEND_OPENGL:
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsOpenGL);
-#  ifdef WIN32
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsOpenGLD3D11);
-#  endif
-        break;
-#endif
-
-#ifdef WITH_VULKAN_BACKEND
-      case GPU_BACKEND_VULKAN:
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsVulkan);
-#  ifdef WIN32
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsVulkanD3D11);
-#  endif
-        break;
-#endif
-
 #ifdef WITH_METAL_BACKEND
       case GPU_BACKEND_METAL:
         gpu_bindings_candidates.append(GHOST_kXrGraphicsMetal);

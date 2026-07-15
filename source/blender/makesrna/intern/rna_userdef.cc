@@ -205,9 +205,7 @@ static const EnumPropertyItem rna_enum_key_insert_channels[] = {
 };
 
 static const EnumPropertyItem rna_enum_preference_gpu_backend_items[] = {
-    {GPU_BACKEND_OPENGL, "OPENGL", 0, "OpenGL", "Use OpenGL backend"},
     {GPU_BACKEND_METAL, "METAL", 0, "Metal", "Use Metal backend"},
-    {GPU_BACKEND_VULKAN, "VULKAN", 0, "Vulkan", "Use Vulkan backend"},
     {0, nullptr, 0, nullptr, nullptr},
 };
 static const EnumPropertyItem rna_enum_preference_gpu_preferred_device_items[] = {
@@ -1523,18 +1521,8 @@ static const EnumPropertyItem *rna_preference_gpu_backend_itemf(bContext * /*C*/
   EnumPropertyItem *result = nullptr;
   for (int i = 0; rna_enum_preference_gpu_backend_items[i].identifier != nullptr; i++) {
     const EnumPropertyItem *item = &rna_enum_preference_gpu_backend_items[i];
-#  ifndef WITH_OPENGL_BACKEND
-    if (item->value == GPU_BACKEND_OPENGL) {
-      continue;
-    }
-#  endif
 #  ifndef WITH_METAL_BACKEND
     if (item->value == GPU_BACKEND_METAL) {
-      continue;
-    }
-#  endif
-#  ifndef WITH_VULKAN_BACKEND
-    if (item->value == GPU_BACKEND_VULKAN) {
       continue;
     }
 #  endif

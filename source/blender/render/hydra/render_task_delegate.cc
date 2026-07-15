@@ -4,11 +4,6 @@
 
 #include "render_task_delegate.hh"
 
-#ifdef WITH_OPENGL_BACKEND
-#  include "GPU_context.hh"
-#  include <epoxy/gl.h>
-#endif
-
 #include <pxr/imaging/hd/legacyTaskFactory.h>
 #include <pxr/imaging/hd/legacyTaskSchema.h>
 #include <pxr/imaging/hd/renderBuffer.h>
@@ -310,27 +305,12 @@ void GPURenderTaskDelegate::bind()
 
   GPU_framebuffer_clear_color_depth(framebuffer_, {0.0, 0.0, 0.0, 0.0}, 1.0f);
 
-#ifdef WITH_OPENGL_BACKEND
-  /* Workaround missing/buggy VAOs in hgiGL and hdSt. For OpenGL compatibility
-   * profile this is not a problem, but for core profile it is. */
-  if (VAO_ == 0 && GPU_backend_get_type() == GPU_BACKEND_OPENGL) {
-    glGenVertexArrays(1, &VAO_);
-    glBindVertexArray(VAO_);
-  }
-#else
   UNUSED_VARS(VAO_);
-#endif
   CLOG_DEBUG(LOG_HYDRA_RENDER, "bind");
 }
 
 void GPURenderTaskDelegate::unbind()
 {
-#ifdef WITH_OPENGL_BACKEND
-  if (VAO_) {
-    glDeleteVertexArrays(1, &VAO_);
-    VAO_ = 0;
-  }
-#endif
   if (framebuffer_) {
     GPU_framebuffer_free(framebuffer_);
     framebuffer_ = nullptr;

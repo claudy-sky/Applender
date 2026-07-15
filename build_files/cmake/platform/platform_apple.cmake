@@ -212,18 +212,10 @@ if(WITH_JACK)
   string(APPEND PLATFORM_LINKFLAGS " -F/Library/Frameworks -weak_framework jackmp")
 endif()
 
-if(WITH_VULKAN_BACKEND)
-  find_package(ShaderC REQUIRED)
-  find_package(Vulkan REQUIRED)
-endif()
-
 if(WITH_SDL)
   find_package(SDL3 REQUIRED CONFIG)
 endif()
 add_bundled_libraries(sdl/lib)
-
-set(EPOXY_ROOT_DIR ${LIBDIR}/epoxy)
-find_package(Epoxy REQUIRED)
 
 set(PNG_ROOT ${LIBDIR}/png)
 find_package(PNG REQUIRED)

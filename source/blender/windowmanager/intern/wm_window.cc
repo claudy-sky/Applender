@@ -2375,23 +2375,15 @@ GHOST_TDrawingContextType wm_ghost_drawing_context_type(const GPUBackendType gpu
   switch (gpu_backend) {
     case GPU_BACKEND_NONE:
       return GHOST_kDrawingContextTypeNone;
-    case GPU_BACKEND_ANY:
-    case GPU_BACKEND_OPENGL:
-#ifdef WITH_OPENGL_BACKEND
-      return GHOST_kDrawingContextTypeOpenGL;
-#endif
-      BLI_assert_unreachable();
-      return GHOST_kDrawingContextTypeNone;
-    case GPU_BACKEND_VULKAN:
-#ifdef WITH_VULKAN_BACKEND
-      return GHOST_kDrawingContextTypeVulkan;
-#endif
-      BLI_assert_unreachable();
-      return GHOST_kDrawingContextTypeNone;
     case GPU_BACKEND_METAL:
 #ifdef WITH_METAL_BACKEND
       return GHOST_kDrawingContextTypeMetal;
 #endif
+      BLI_assert_unreachable();
+      return GHOST_kDrawingContextTypeNone;
+    case GPU_BACKEND_ANY:
+    case GPU_BACKEND_OPENGL:
+    case GPU_BACKEND_VULKAN:
       BLI_assert_unreachable();
       return GHOST_kDrawingContextTypeNone;
   }

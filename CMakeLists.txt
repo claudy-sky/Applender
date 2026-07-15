@@ -623,7 +623,7 @@ Build Cycles kernels with address sanitizer when WITH_COMPILER_ASAN is on, even 
 )
 set(CYCLES_TEST_DEVICES CPU CACHE STRING "\
 Run regression tests on the specified device types \
-(CPU CUDA OPTIX HIP HIP-RT METAL METAL-RT ONEAPI ONEAPI-RT)"
+(CPU METAL METAL-RT)"
 )
 option(WITH_CYCLES_TEST_OSL "\
 Run additional Cycles test with OSL enabled"
@@ -845,22 +845,10 @@ Requires internet access."
 mark_as_advanced(WITH_TRACY)
 
 
-# OpenGL
-if(NOT APPLE)
-  option(WITH_OPENGL_BACKEND "Enable OpenGL support as graphics backend" ON)
-  mark_as_advanced(WITH_OPENGL_BACKEND)
-else()
-  set(WITH_OPENGL_BACKEND OFF)
-endif()
-
-# Vulkan
-if(NOT APPLE)
-  option(WITH_VULKAN_BACKEND "Enable Vulkan as graphics backend" ON)
-  mark_as_advanced(WITH_VULKAN_BACKEND)
-else()
-  option(WITH_VULKAN_BACKEND "Enable Vulkan as graphics backend (development option)" OFF)
-  mark_as_advanced(WITH_VULKAN_BACKEND)
-endif()
+# OpenGL and Vulkan viewport GPU backends have been removed from this fork.
+# Metal is the only supported graphics backend (plus the dummy/headless backend).
+set(WITH_OPENGL_BACKEND OFF)
+set(WITH_VULKAN_BACKEND OFF)
 
 # Metal
 if(APPLE)
