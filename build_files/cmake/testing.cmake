@@ -102,10 +102,6 @@ function(blender_src_gtest_ex)
                           bf::dependencies::optional::tbb
                           bf::dependencies::optional::gmp)
 
-    if(UNIX AND NOT APPLE)
-      target_link_libraries(${TARGET_NAME} PRIVATE bf_intern_libc_compat)
-    endif()
-
     get_blender_test_install_dir(TEST_INSTALL_DIR)
     set_target_properties(${TARGET_NAME} PROPERTIES
                           RUNTIME_OUTPUT_DIRECTORY         "${TESTS_OUTPUT_DIR}"

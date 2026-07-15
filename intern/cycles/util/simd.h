@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <limits>
 
@@ -237,6 +238,51 @@ type shuffle_neon(const type &a, const type &b)
 #  define _lzcnt_u32 __lzcnt32
 #  define _lzcnt_u64 __lzcnt64
 #endif
+
+/* Bit-scan operations. Callers guarantee a non-zero argument
+ * (the builtins are undefined for zero input). */
+
+__forceinline uint32_t __bsf(const uint32_t v)
+{
+  return (uint32_t)__builtin_ctz(v);
+}
+
+__forceinline uint32_t __bsr(const uint32_t v)
+{
+  return 31 - (uint32_t)__builtin_clz(v);
+}
+
+__forceinline uint32_t __btc(const uint32_t v, const uint32_t i)
+{
+  return v ^ (uint32_t(1) << i);
+}
+
+__forceinline uint64_t __bsf(const uint64_t v)
+{
+  return (uint64_t)__builtin_ctzll(v);
+}
+
+__forceinline uint64_t __bsr(const uint64_t v)
+{
+  return 63 - (uint64_t)__builtin_clzll(v);
+}
+
+__forceinline uint64_t __btc(const uint64_t v, const uint64_t i)
+{
+  return v ^ (uint64_t(1) << i);
+}
+
+__forceinline uint32_t bitscan(const uint32_t value)
+{
+  assert(value != 0);
+  return __bsf(value);
+}
+
+__forceinline uint64_t bitscan(const uint64_t value)
+{
+  assert(value != 0);
+  return __bsf(value);
+}
 
 /* Older GCC versions do not have _mm256_cvtss_f32 yet, so define it ourselves.
  * _mm256_castps256_ps128 generates no instructions so this is just as efficient. */
