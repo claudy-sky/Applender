@@ -224,86 +224,12 @@ if(WITH_CYCLES_OSL)
   add_definitions(-DWITH_OSL)
 endif()
 
-if(WITH_CYCLES_DEVICE_CUDA OR WITH_CYCLES_DEVICE_OPTIX)
-  add_definitions(-DWITH_CUDA)
-
-  if(WITH_CUDA_DYNLOAD)
-    include_directories(
-      ../../extern/cuew/include
-    )
-    add_definitions(-DWITH_CUDA_DYNLOAD)
-  else()
-    include_directories(
-      SYSTEM
-      ${CUDA_TOOLKIT_INCLUDE}
-    )
-  endif()
-endif()
-
-if(WITH_CYCLES_DEVICE_HIP)
-  add_definitions(-DWITH_HIP)
-
-  if(WITH_CYCLES_DEVICE_HIPRT)
-    include_directories(
-      ${HIPRT_INCLUDE_DIRS}
-    )
-    add_definitions(-DWITH_HIPRT)
-  endif()
-
-  if(WITH_HIP_DYNLOAD)
-    include_directories(
-      ../../extern/hipew/include
-    )
-    add_definitions(-DWITH_HIP_DYNLOAD)
-  endif()
-endif()
-
-if(WITH_CYCLES_DEVICE_OPTIX)
-  find_package(OptiX 8.0.0)
-
-  if(OPTIX_FOUND)
-    add_definitions(-DWITH_OPTIX)
-    include_directories(
-      SYSTEM
-      ${OPTIX_INCLUDE_DIR}
-    )
-  else()
-    set_and_warn_library_found("OptiX" OPTIX_FOUND WITH_CYCLES_DEVICE_OPTIX)
-  endif()
-endif()
-
 if(WITH_CYCLES_DEVICE_METAL)
   add_definitions(-DWITH_METAL)
 endif()
 
-if(WITH_CYCLES_DEVICE_ONEAPI)
-  add_definitions(-DWITH_ONEAPI)
-endif()
-
 if(WITH_CYCLES_EMBREE)
   add_definitions(-DWITH_EMBREE)
-  if(WITH_CYCLES_DEVICE_ONEAPI AND EMBREE_SYCL_SUPPORT)
-    # NOTE: The debug version of Embree is built without SYCL support on Windows
-    # since 7fb480095e371f8f5ac4f647f0ba2fd78da486f7. This is not reflected in
-    # EMBREE_SYCL_SUPPORT which is coming from Embree headers that aren't
-    # differentiated for release and debug, so we handle this case here by
-    # disabling its use when embree4_sycl_d.lib doesn't exist.
-    set(EMBREE_SYCL_DEBUG_LIBRARY ${EMBREE_LIBRARIES})
-    list(FILTER EMBREE_SYCL_DEBUG_LIBRARY INCLUDE REGEX "_sycl_d\\.lib$")
-    if(WIN32 AND NOT EMBREE_SYCL_DEBUG_LIBRARY)
-      add_compile_definitions("$<$<CONFIG:Release>:WITH_EMBREE_GPU>")
-      add_compile_definitions("$<$<CONFIG:RelWithDebInfo>:WITH_EMBREE_GPU>")
-      add_compile_definitions("$<$<CONFIG:MinSizeRel>:WITH_EMBREE_GPU>")
-      if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR GENERATOR_IS_MULTI_CONFIG)
-        message(STATUS
-          "The use of Embree GPU is disabled for the Debug configuration "
-          "as embree${EMBREE_MAJOR_VERSION}_sycl_d.lib is not found."
-        )
-      endif()
-    else()
-      add_definitions(-DWITH_EMBREE_GPU)
-    endif()
-  endif()
   add_definitions(-DEMBREE_MAJOR_VERSION=${EMBREE_MAJOR_VERSION})
 endif()
 
