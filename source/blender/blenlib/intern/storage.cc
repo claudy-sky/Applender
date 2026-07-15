@@ -34,19 +34,9 @@
 #include <cstring>
 #include <fcntl.h>
 
-#ifdef WIN32
-#  include "BLI_string_utf8.hh"
-#  include "BLI_winstuff.hh"
-#  include "utfconv.hh"
-#  include <ShObjIdl.h>
-#  include <direct.h>
-#  include <io.h>
-#  include <stdbool.h>
-#else
-#  include <pwd.h>
-#  include <sys/ioctl.h>
-#  include <unistd.h>
-#endif
+#include <pwd.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 /* lib includes */
 #include "MEM_guardedalloc.h"
@@ -100,9 +90,6 @@ const char *BLI_dir_home()
 {
   const char *home_dir;
 
-#ifdef WIN32
-  home_dir = BLI_getenv("userprofile");
-#else
   /* Return the users home directory with a fallback when the environment variable isn't set.
    * Failure to access `$HOME` is rare but possible, see: #2931.
    *
@@ -115,40 +102,17 @@ const char *BLI_dir_home()
       home_dir = pwuser->pw_dir;
     }
   }
-#endif
 
   return home_dir;
 }
 
 double BLI_dir_free_space(const char *dir)
 {
-#ifdef WIN32
-  DWORD sectorspc, bytesps, freec, clusters;
-  char tmp[4];
-
-  tmp[0] = '\\';
-  tmp[1] = 0; /* Just a fail-safe. */
-  if (ELEM(dir[0], '/', '\\')) {
-    tmp[0] = '\\';
-    tmp[1] = 0;
-  }
-  else if (dir[1] == ':') {
-    tmp[0] = dir[0];
-    tmp[1] = ':';
-    tmp[2] = '\\';
-    tmp[3] = 0;
-  }
-
-  GetDiskFreeSpace(tmp, &sectorspc, &bytesps, &freec, &clusters);
-
-  return double(freec * bytesps * sectorspc);
-#else
-
-#  ifdef USE_STATFS_STATVFS
+#ifdef USE_STATFS_STATVFS
   struct statvfs disk;
-#  else
+#else
   struct statfs disk;
-#  endif
+#endif
 
   char dirname[FILE_MAXDIR], *slash;
   int len = strlen(dir);
@@ -186,34 +150,21 @@ double BLI_dir_free_space(const char *dir)
 #  endif
 
   return double(disk.f_bsize) * double(disk.f_bfree);
-#endif
 }
 
 int64_t BLI_ftell(FILE *stream)
 {
-#ifdef WIN32
-  return _ftelli64(stream);
-#else
   return ftell(stream);
-#endif
 }
 
 int BLI_fseek(FILE *stream, int64_t offset, int whence)
 {
-#ifdef WIN32
-  return _fseeki64(stream, offset, whence);
-#else
   return fseek(stream, offset, whence);
-#endif
 }
 
 int64_t BLI_lseek(int fd, int64_t offset, int whence)
 {
-#ifdef WIN32
-  return _lseeki64(fd, offset, whence);
-#else
   return lseek(fd, offset, whence);
-#endif
 }
 
 size_t BLI_file_descriptor_size(int file)
@@ -361,88 +312,19 @@ bool BLI_file_alias_target(const char *filepath,
 
 int BLI_file_stat_mode(const char *path)
 {
-#if defined(WIN32)
-  BLI_stat_t st;
-  wchar_t *tmp_16 = alloc_utf16_from_8(path, 1);
-  int len, res;
-
-  len = wcslen(tmp_16);
-  /* in Windows #stat doesn't recognize dir ending on a slash
-   * so we remove it here */
-  if ((len > 3) && ELEM(tmp_16[len - 1], L'\\', L'/')) {
-    tmp_16[len - 1] = '\0';
-  }
-  /* two special cases where the trailing slash is needed:
-   * 1. after the share part of a UNC path
-   * 2. after the C:\ when the path is the volume only
-   */
-  if ((len >= 3) && (tmp_16[0] == L'\\') && (tmp_16[1] == L'\\')) {
-    BLI_path_normalize_unc_16(tmp_16);
-  }
-
-  if ((tmp_16[1] == L':') && (tmp_16[2] == L'\0')) {
-    tmp_16[2] = L'\\';
-    tmp_16[3] = L'\0';
-  }
-
-  res = BLI_wstat(tmp_16, &st);
-
-  free(tmp_16);
-  if (res == -1) {
-    return 0;
-  }
-#else
   struct stat st;
   BLI_assert(!BLI_path_is_rel(path));
   if (stat(path, &st)) {
     return 0;
   }
-#endif
   return (st.st_mode);
 }
 
 bool BLI_exists(const char *path)
 {
-#ifdef WIN32
-  wchar_t *path_16 = alloc_utf16_from_8(path, 0);
-  const bool exists = (GetFileAttributesW(path_16) != INVALID_FILE_ATTRIBUTES);
-  free(path_16);
-  return exists;
-#else
   return BLI_file_stat_mode(path) != 0;
-#endif
 }
 
-#ifdef WIN32
-int BLI_fstat(int fd, BLI_stat_t *buffer)
-{
-#  if defined(_MSC_VER)
-  return _fstat64(fd, buffer);
-#  else
-  return _fstat(fd, buffer);
-#  endif
-}
-
-int BLI_stat(const char *path, BLI_stat_t *buffer)
-{
-  int r;
-  UTF16_ENCODE(path);
-
-  r = BLI_wstat(path_16, buffer);
-
-  UTF16_UN_ENCODE(path);
-  return r;
-}
-
-int BLI_wstat(const wchar_t *path, BLI_stat_t *buffer)
-{
-#  if defined(_MSC_VER)
-  return _wstat64(path, buffer);
-#  else
-  return _wstat(path, buffer);
-#  endif
-}
-#else
 int BLI_fstat(int fd, struct stat *buffer)
 {
   return fstat(fd, buffer);
@@ -452,31 +334,16 @@ int BLI_stat(const char *path, struct stat *buffer)
 {
   return stat(path, buffer);
 }
-#endif
 
 bool BLI_is_dir(const char *path)
 {
-#ifdef WIN32
-  wchar_t *tmp_16 = alloc_utf16_from_8(path, 1);
-  const DWORD attr = GetFileAttributesW(tmp_16);
-  free(tmp_16);
-  return (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY));
-#else
   return S_ISDIR(BLI_file_stat_mode(path));
-#endif
 }
 
 bool BLI_is_file(const char *path)
 {
-#ifdef WIN32
-  wchar_t *tmp_16 = alloc_utf16_from_8(path, 1);
-  const DWORD attr = GetFileAttributesW(tmp_16);
-  free(tmp_16);
-  return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
-#else
   const int mode = BLI_file_stat_mode(path);
   return (mode && !S_ISDIR(mode));
-#endif
 }
 
 void *BLI_file_read_data_as_mem_from_handle(FILE *fp,

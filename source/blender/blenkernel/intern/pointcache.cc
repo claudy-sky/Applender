@@ -15,11 +15,7 @@
 #include <sys/types.h>
 
 /* needed for directory lookup */
-#ifndef WIN32
-#  include <dirent.h>
-#else
-#  include "BLI_winstuff.hh"
-#endif
+#include <dirent.h>
 
 #include "CLG_log.h"
 

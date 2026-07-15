@@ -18,13 +18,8 @@
 #include <cstring>
 
 /* path/file handling stuff */
-#ifndef WIN32
-#  include <dirent.h>
-#  include <unistd.h>
-#else
-#  include "BLI_winstuff.hh"
-#  include <io.h>
-#endif
+#include <dirent.h>
+#include <unistd.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -48,9 +43,7 @@
 
 namespace blender {
 
-#ifndef _MSC_VER
-#  include "BLI_strict_flags.hh" /* IWYU pragma: keep. Keep last. */
-#endif
+#include "BLI_strict_flags.hh" /* IWYU pragma: keep. Keep last. */
 
 static CLG_LogRef LOG = {"lib.bpath"};
 

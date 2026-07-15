@@ -21,10 +21,6 @@
 
 #include <fmt/format.h>
 
-#ifdef WIN32
-#  include "GHOST_ISystem.hh"
-#endif
-
 #include "MEM_guardedalloc.h"
 
 #include "CLG_log.h"
@@ -1610,11 +1606,7 @@ static ui::Block *wm_block_dialog_create(bContext *C, ARegion *region, void *use
   /* Clear so the OK button is left alone. */
   block_func_set(block, nullptr, nullptr, nullptr);
 
-#ifdef _WIN32
-  const bool windows_layout = true;
-#else
   const bool windows_layout = false;
-#endif
 
   /* Check there are no active default buttons, allowing a dialog to define its own
    * confirmation buttons which are shown instead of these, see: #124098. */
@@ -2437,34 +2429,6 @@ static void WM_OT_quit_blender(wmOperatorType *ot)
   ot->invoke = wm_exit_blender_invoke;
   ot->exec = wm_exit_blender_exec;
 }
-
-/** \} */
-
-/* -------------------------------------------------------------------- */
-/** \name Console Toggle Operator (WIN32 only)
- * \{ */
-
-#if defined(WIN32)
-
-static wmOperatorStatus wm_console_toggle_exec(bContext * /*C*/, wmOperator * /*op*/)
-{
-  GHOST_ISystem *ghost_system = GHOST_ISystem::getSystem();
-  ghost_system->setConsoleWindowState(GHOST_kConsoleWindowStateToggle);
-  return OPERATOR_FINISHED;
-}
-
-static void WM_OT_console_toggle(wmOperatorType *ot)
-{
-  /* XXX Have to mark these for xgettext, as under linux they do not exists... */
-  ot->name = CTX_N_(BLT_I18NCONTEXT_OPERATOR_DEFAULT, "Toggle System Console");
-  ot->idname = "WM_OT_console_toggle";
-  ot->description = N_("Toggle System Console");
-
-  ot->exec = wm_console_toggle_exec;
-  ot->poll = WM_operator_winactive;
-}
-
-#endif
 
 /** \} */
 
@@ -4263,9 +4227,6 @@ void wm_operatortypes_register()
   WM_operatortype_append(WM_OT_call_asset_shelf_popover);
   WM_operatortype_append(WM_OT_radial_control);
   WM_operatortype_append(WM_OT_stereo3d_set);
-#if defined(WIN32)
-  WM_operatortype_append(WM_OT_console_toggle);
-#endif
   WM_operatortype_append(WM_OT_previews_ensure);
   WM_operatortype_append(WM_OT_previews_clear);
   WM_operatortype_append(WM_OT_doc_view_manual_ui_context);

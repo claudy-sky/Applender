@@ -17,10 +17,6 @@
 #include "BLI_fnmatch.hh"
 #include "BLI_path_utils.hh"
 
-#ifdef WIN32
-#  include "BLI_string.hh"
-#endif
-
 #include "BKE_autoexec.hh" /* own include */
 #include "BKE_global.hh"
 
@@ -30,11 +26,7 @@ bool BKE_autoexec_match(const char *path)
 {
   bPathCompare *path_cmp;
 
-#ifdef WIN32
-  const int fnmatch_flags = FNM_CASEFOLD;
-#else
   const int fnmatch_flags = 0;
-#endif
 
   /* Auto-execution must be enabled by the preference or trusted for this session. */
   BLI_assert((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0 || (G.f & G_FLAG_SCRIPT_AUTOEXEC));

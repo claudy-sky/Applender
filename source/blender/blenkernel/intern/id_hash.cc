@@ -3,11 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <fcntl.h>
-#ifndef WIN32
-#  include <unistd.h>
-#else
-#  include <io.h>
-#endif
+#include <unistd.h>
 #include <fmt/format.h>
 #include <mutex>
 #include <xxhash.h>

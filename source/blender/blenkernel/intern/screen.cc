@@ -9,10 +9,6 @@
 /* Allow using deprecated functionality for .blend file I/O. */
 #define DNA_DEPRECATED_ALLOW
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include <fmt/format.h>
 
 #include <cmath>

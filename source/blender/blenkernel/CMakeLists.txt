@@ -620,12 +620,6 @@ if(WITH_BINRELOC)
 endif()
 
 
-if(WIN32)
-  list(APPEND INC
-    ../../../intern/utfconv
-  )
-endif()
-
 if(WITH_BULLET)
   list(APPEND INC
     ../../../intern/rigidbody

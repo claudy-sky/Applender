@@ -29,10 +29,6 @@
 #  include "BLI_string_utf8.hh"
 #endif
 
-#ifdef _WIN32
-#  include "BLI_math_base_c.hh" /* isfinite() */
-#endif
-
 namespace blender {
 
 /* -------------------------------------------------------------------- */

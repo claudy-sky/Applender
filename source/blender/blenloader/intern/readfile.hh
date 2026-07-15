@@ -12,10 +12,6 @@
 #include <cstdio> /* IWYU pragma: keep. Include header using off_t before poisoning it below. */
 #include <optional>
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "BLI_enum_flags.hh"
 #include "BLI_fileops.hh"
 #include "BLI_filereader.hh"

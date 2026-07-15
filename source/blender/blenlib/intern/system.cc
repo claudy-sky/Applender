@@ -19,18 +19,12 @@
 #include "BLI_string.hh"
 #include "BLI_system.hh"
 
-/* for backtrace and gethostname/GetComputerName */
-#if defined(WIN32)
-#  include <intrin.h>
-
-#  include "BLI_winstuff.hh"
-#else
-#  if defined(HAVE_EXECINFO_H)
-#    include <execinfo.h>
-#  endif
-#  include <sys/resource.h>
-#  include <unistd.h>
+/* for backtrace and gethostname */
+#if defined(HAVE_EXECINFO_H)
+#  include <execinfo.h>
 #endif
+#include <sys/resource.h>
+#include <unistd.h>
 
 namespace blender {
 
@@ -68,7 +62,6 @@ int BLI_cpu_support_sse2()
 #endif
 }
 
-/* Windows stack-walk lives in system_win32.cc */
 #if !defined(_MSC_VER)
 void BLI_system_backtrace_with_os_info(FILE *fp, const void * /*os_info*/)
 {
@@ -118,7 +111,6 @@ void BLI_system_backtrace(FILE *fp)
 
 /* NOTE: The code for CPU brand string is adopted from Cycles. */
 
-#if !defined(_WIN32) || defined(FREE_WINDOWS)
 static void __cpuid(
     /* Cannot be const, because it is modified below.
      * NOLINTNEXTLINE: readability-non-const-parameter. */
@@ -140,7 +132,6 @@ static void __cpuid(
   data[0] = data[1] = data[2] = data[3] = 0;
 #  endif
 }
-#endif
 
 char *BLI_cpu_brand_string()
 {
@@ -191,18 +182,11 @@ int BLI_cpu_support_sse42()
 
 void BLI_hostname_get(char *buffer, size_t buffer_maxncpy)
 {
-#ifndef WIN32
   if (gethostname(buffer, buffer_maxncpy - 1) < 0) {
     BLI_strncpy(buffer, "-unknown-", buffer_maxncpy);
   }
   /* When `gethostname()` truncates, it doesn't guarantee the trailing `\0`. */
   buffer[buffer_maxncpy - 1] = '\0';
-#else
-  DWORD buffer_size_in_out = buffer_maxncpy;
-  if (!GetComputerName(buffer, &buffer_size_in_out)) {
-    BLI_strncpy(buffer, "-unknown-", buffer_maxncpy);
-  }
-#endif
 }
 
 size_t BLI_system_memory_max_in_megabytes()
@@ -228,18 +212,12 @@ void BLI_system_max_open_files_ensure()
   constexpr int max_open_files = 8192;
   bool ok = true;
 
-#if defined(WIN32)
-  if (_getmaxstdio() < max_open_files) {
-    ok = _setmaxstdio(max_open_files) == max_open_files;
-  }
-#else
   struct rlimit limit;
   ok = getrlimit(RLIMIT_NOFILE, &limit) == 0;
   if (ok && limit.rlim_cur < rlim_t(max_open_files)) {
     limit.rlim_cur = std::min(rlim_t(max_open_files), limit.rlim_max);
     ok = setrlimit(RLIMIT_NOFILE, &limit) == 0;
   }
-#endif
 
   if (!ok) {
     CLOG_DEBUG(&LOG,

@@ -1954,8 +1954,8 @@ static bool ghost_event_proc(const GHOST_IEvent *ghost_event, GHOST_TUserDataPtr
           WM_event_add_notifier_ex(wm, win, NC_SCREEN | NA_EDITED, nullptr);
           WM_event_add_notifier_ex(wm, win, NC_WINDOW | NA_EDITED, nullptr);
 
-#if defined(__APPLE__) || defined(WIN32)
-          /* MACOS and WIN32 don't return to the main-loop while resize. */
+#if defined(__APPLE__)
+          /* MACOS doesn't return to the main-loop while resize. */
           int dummy_sleep_ms = 0;
           wm_window_timers_process(C, &dummy_sleep_ms);
           wm_event_do_handlers(C);
@@ -2756,39 +2756,7 @@ char *WM_clipboard_text_get_firstline(bool selection, bool ensure_utf8, int *r_l
 void WM_clipboard_text_set(const char *buf, bool selection)
 {
   if (!G.background) {
-#ifdef _WIN32
-    /* Do conversion from `\n` to `\r\n` on Windows. */
-    const char *p;
-    char *p2, *newbuf;
-    int newlen = 0;
-
-    for (p = buf; *p; p++) {
-      if (*p == '\n') {
-        newlen += 2;
-      }
-      else {
-        newlen++;
-      }
-    }
-
-    newbuf = MEM_new_array_zeroed<char>(newlen + 1, "WM_clipboard_text_set");
-
-    for (p = buf, p2 = newbuf; *p; p++, p2++) {
-      if (*p == '\n') {
-        *(p2++) = '\r';
-        *p2 = '\n';
-      }
-      else {
-        *p2 = *p;
-      }
-    }
-    *p2 = '\0';
-
-    wm_clipboard_text_set_impl(newbuf, selection);
-    MEM_delete(newbuf);
-#else
     wm_clipboard_text_set_impl(buf, selection);
-#endif
   }
 }
 

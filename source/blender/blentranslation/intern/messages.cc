@@ -27,10 +27,6 @@
 #include "BLI_string_ref.hh"
 #include "BLI_vector.hh"
 
-#ifdef _WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "CLG_log.h"
 
 namespace blender::locale {
@@ -104,31 +100,6 @@ class Info {
         locale_name = lang;
       }
     }
-
-#ifdef _WIN32
-    if (locale_name.empty()) {
-      char buf[128] = {};
-      if (GetLocaleInfoA(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, buf, sizeof(buf)) != 0) {
-        locale_name = buf;
-        if (GetLocaleInfoA(LOCALE_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, buf, sizeof(buf)) != 0) {
-          std::string region = buf;
-          if (locale_name == "zh") {
-            if (region == "TW" || region == "HK" || region == "MO") {
-              /* Traditional for Taiwan, Hong Kong, Macau. */
-              locale_name += "_HANT";
-            }
-            else {
-              /* Simplified for all other areas. */
-              locale_name += "_HANS";
-            }
-          }
-          else {
-            locale_name += "_" + region;
-          }
-        }
-      }
-    }
-#endif
 
     parse_from_lang(locale_name);
   }

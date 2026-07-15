@@ -11,24 +11,15 @@
 #include <cstdlib>
 #include <sys/types.h>
 
-#ifndef WIN32
-#  include <dirent.h>
-#endif
+#include <dirent.h>
 
 #include <cstring>
 #include <ctime>
 #include <sys/stat.h>
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#  include "utfconv.hh"
-#  include <direct.h>
-#  include <io.h>
-#else
-#  include <pwd.h>
-#  include <sys/ioctl.h>
-#  include <unistd.h>
-#endif
+#include <pwd.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 /* lib includes */
 #include "MEM_guardedalloc.h"
@@ -259,21 +250,12 @@ void BLI_filelist_entry_size_to_string(const struct stat *st,
    * everyone starts using __USE_FILE_OFFSET64 or equivalent.
    */
   double size = double(st ? st->st_size : st_size_fallback);
-#ifdef WIN32
-  if (compact) {
-    BLI_str_format_byte_unit_compact(r_size, size, false);
-  }
-  else {
-    BLI_str_format_byte_unit(r_size, size, false);
-  }
-#else
   if (compact) {
     BLI_str_format_byte_unit_compact(r_size, size, true);
   }
   else {
     BLI_str_format_byte_unit(r_size, size, true);
   }
-#endif
 }
 
 void BLI_filelist_entry_mode_to_string(const struct stat *st,
@@ -284,12 +266,6 @@ void BLI_filelist_entry_mode_to_string(const struct stat *st,
 {
   const char *types[8] = {"---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"};
 
-#ifdef WIN32
-  UNUSED_VARS(st);
-  BLI_strncpy(r_mode1, types[0], sizeof(*r_mode1) * FILELIST_DIRENTRY_MODE_LEN);
-  BLI_strncpy(r_mode2, types[0], sizeof(*r_mode2) * FILELIST_DIRENTRY_MODE_LEN);
-  BLI_strncpy(r_mode3, types[0], sizeof(*r_mode3) * FILELIST_DIRENTRY_MODE_LEN);
-#else
   const int mode = st->st_mode;
 
   BLI_strncpy(r_mode1, types[(mode & 0700) >> 6], sizeof(*r_mode1) * FILELIST_DIRENTRY_MODE_LEN);
@@ -321,17 +297,12 @@ void BLI_filelist_entry_mode_to_string(const struct stat *st,
       r_mode3[2] = 'T';
     }
   }
-#endif
 }
 
 void BLI_filelist_entry_owner_to_string(const struct stat *st,
                                         const bool /*compact*/,
                                         char r_owner[FILELIST_DIRENTRY_OWNER_LEN])
 {
-#ifdef WIN32
-  UNUSED_VARS(st);
-  BLI_strncpy(r_owner, "unknown", FILELIST_DIRENTRY_OWNER_LEN);
-#else
   const passwd *pwuser = getpwuid(st->st_uid);
 
   if (pwuser) {
@@ -340,7 +311,6 @@ void BLI_filelist_entry_owner_to_string(const struct stat *st,
   else {
     BLI_snprintf(r_owner, sizeof(*r_owner) * FILELIST_DIRENTRY_OWNER_LEN, "%u", st->st_uid);
   }
-#endif
 }
 
 void BLI_filelist_entry_duplicate(direntry *dst, const direntry *src)

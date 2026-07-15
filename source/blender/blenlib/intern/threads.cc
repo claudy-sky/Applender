@@ -20,10 +20,7 @@
 #include "BLI_utildefines.hh"
 
 /* for checking system threads - BLI_system_thread_count */
-#ifdef WIN32
-#  include <sys/timeb.h>
-#  include <windows.h>
-#elif defined(__APPLE__)
+#ifdef __APPLE__
 #  include <sys/sysctl.h>
 #  include <sys/types.h>
 #else
@@ -263,12 +260,7 @@ int BLI_system_thread_count()
   }
 
   {
-#ifdef WIN32
-    SYSTEM_INFO info;
-    GetSystemInfo(&info);
-    t = int(info.dwNumberOfProcessors);
-#else
-#  ifdef __APPLE__
+#ifdef __APPLE__
     int mib[2];
     size_t len;
 
@@ -276,9 +268,8 @@ int BLI_system_thread_count()
     mib[1] = HW_NCPU;
     len = sizeof(t);
     sysctl(mib, 2, &t, &len, nullptr, 0);
-#  else
+#else
     t = int(sysconf(_SC_NPROCESSORS_ONLN));
-#  endif
 #endif
   }
 
@@ -750,21 +741,12 @@ static void wait_timeout(timespec *timeout, int ms)
   ldiv_t div_result;
   long sec, usec, x;
 
-#ifdef WIN32
-  {
-    struct _timeb now;
-    _ftime(&now);
-    sec = now.time;
-    usec = now.millitm * 1000; /* microsecond precision would be better */
-  }
-#else
   {
     timeval now;
     gettimeofday(&now, nullptr);
     sec = now.tv_sec;
     usec = now.tv_usec;
   }
-#endif
 
   /* add current time + millisecond offset */
   div_result = ldiv(ms, 1000);

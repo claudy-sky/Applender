@@ -586,11 +586,7 @@ int BKE_preferences_remote_scheme_end(const char *url)
 
 void BKE_preferences_remote_to_name(const char *remote_url, char name[MAX_NAME])
 {
-#ifdef _WIN32
-  const bool is_win32 = true;
-#else
   const bool is_win32 = false;
-#endif
   const bool is_file = STRPREFIX(remote_url, "file://");
   name[0] = '\0';
   if (int offset = BKE_preferences_remote_scheme_end(remote_url)) {

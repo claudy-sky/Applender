@@ -80,47 +80,7 @@ static PyObject *python_compat_wrapper_PyRun_FileExFlags(FILE *fp,
                                                          const int closeit,
                                                          PyCompilerFlags *flags)
 {
-  /* Previously we used #PyRun_File to run directly the code on a FILE
-   * object, but as written in the Python/C API Ref Manual, chapter 2,
-   * 'FILE structs for different C libraries can be different and incompatible'.
-   * So now we load the script file data to a buffer on MS-Windows. */
-#ifdef _WIN32
-  bool use_file_handle_workaround = true;
-#else
-  bool use_file_handle_workaround = false;
-#endif
-
-  if (!use_file_handle_workaround) {
-    return PyRun_FileExFlags(fp, filepath, start, globals, locals, closeit, flags);
-  }
-
-  PyObject *py_result = nullptr;
-  size_t buf_len;
-  char *buf = static_cast<char *>(BLI_file_read_data_as_mem_from_handle(fp, false, 1, &buf_len));
-  if (closeit) {
-    fclose(fp);
-  }
-
-  if (buf == nullptr) [[unlikely]] {
-    PyErr_Format(PyExc_IOError, "Python file \"%s\" could not read buffer", filepath);
-  }
-  else {
-    buf[buf_len] = '\0';
-    PyObject *filepath_py = PyC_UnicodeFromBytes(filepath);
-    PyObject *compiled = Py_CompileStringObject(buf, filepath_py, Py_file_input, flags, -1);
-    MEM_delete(buf);
-    Py_DECREF(filepath_py);
-
-    if (compiled == nullptr) {
-      /* Based on Python's internal usage, an error must always be set. */
-      BLI_assert(PyErr_Occurred());
-    }
-    else {
-      py_result = PyEval_EvalCode(compiled, globals, locals);
-      Py_DECREF(compiled);
-    }
-  }
-  return py_result;
+  return PyRun_FileExFlags(fp, filepath, start, globals, locals, closeit, flags);
 }
 
 /**

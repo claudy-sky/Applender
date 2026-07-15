@@ -52,10 +52,6 @@
 
 namespace blender {
 
-#ifdef WIN32
-#  define FT_New_Face FT_New_Face__win32_compat
-#endif
-
 /* Batching buffer for drawing. */
 
 BatchBLF g_batch;

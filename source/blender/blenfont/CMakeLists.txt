@@ -36,12 +36,6 @@ set(LIB
   PRIVATE bf::dependencies::freetype
 )
 
-if(WIN32)
-  list(APPEND SRC
-    intern/blf_font_win32_compat.cc
-  )
-endif()
-
 if(WITH_PYTHON)
   add_definitions(-DWITH_PYTHON)
   list(APPEND INC

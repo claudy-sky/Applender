@@ -22,10 +22,6 @@
 
 #include "BKE_unit.hh" /* own include */
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 namespace blender {
 
 /* No BKE or DNA includes! */

@@ -18,13 +18,7 @@
 #include <fcntl.h> /* for open flags (O_BINARY, O_RDONLY). */
 #include <queue>
 
-#ifndef WIN32
-#  include <unistd.h> /* for read close */
-#else
-#  include "BLI_winstuff.hh"
-#  include "winsock2.h"
-#  include <io.h> /* for open close read */
-#endif
+#include <unistd.h> /* for read close */
 
 #include <fmt/format.h>
 

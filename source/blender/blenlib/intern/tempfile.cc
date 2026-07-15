@@ -60,11 +60,7 @@ void BLI_temp_directory_path_get(char *tempdir, const size_t tempdir_maxncpy)
 {
   tempdir[0] = '\0';
 
-#ifdef WIN32
-  const char *env_var = "TEMP";
-#else
   const char *env_var = "TMPDIR";
-#endif
 
   if (const char *tempdir_test = BLI_getenv(env_var)) {
     BLI_temp_directory_path_copy_if_valid(tempdir, tempdir_maxncpy, tempdir_test);

@@ -14,16 +14,11 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_build_config.hh"
 #include "BLI_listbase.hh"
 #include "BLI_string.hh"
 #include "BLI_threads.hh"
 #include "BLI_time.hh"
 #include "BLI_utildefines.hh"
-
-#if OS_WINDOWS
-#  include "BLI_winstuff.hh"
-#endif
 
 #include "BKE_context.hh"
 #include "BKE_global.hh"
@@ -179,19 +174,10 @@ static void wm_job_main_thread_yield(wmJob *wm_job)
 
 static void wm_jobs_update_qos(const wmWindowManager *wm)
 {
-  /* A QoS API is currently only available for Windows. */
-#if OS_WINDOWS
-  for (wmJob &wm_job : wm->runtime->jobs) {
-    if (wm_job.flag & WM_JOB_PRIORITY) {
-      BLI_windows_process_set_qos(QoSMode::HIGH, QoSPrecedence::JOB);
-      return;
-    }
-  }
-
-  BLI_windows_process_set_qos(QoSMode::DEFAULT, QoSPrecedence::JOB);
-#else
+  /* TODO(Apple Silicon): No QoS API is currently wired up for macOS.
+   * A `pthread`/`qos_class_t`-based equivalent is expected to land in a later
+   * optimization stage; until then this is intentionally a no-op. */
   UNUSED_VARS(wm);
-#endif
 }
 /**
  * Finds if type or owner, compare for it, otherwise any matching job.

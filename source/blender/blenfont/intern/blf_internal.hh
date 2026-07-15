@@ -238,14 +238,3 @@ bool blf_character_to_curves(FontBLF *font,
                              rctf *r_bounds);
 
 }  // namespace blender
-
-#ifdef WIN32
-/* `blf_font_win32_compat.cc` */
-
-#  ifdef FT_FREETYPE_H
-extern FT_Error FT_New_Face__win32_compat(FT_Library library,
-                                          const char *pathname,
-                                          FT_Long face_index,
-                                          FT_Face *aface);
-#  endif
-#endif

@@ -562,11 +562,7 @@ template<typename T> void cdt_draw(const std::string &label, const CDTArrangemen
 /* Would like to use #BKE_tempdir_base() here, but that brings in dependence on kernel library.
  * This is just for developer debugging anyway, and should never be called in production Blender.
  */
-#  ifdef _WIN32
-  const char *drawfile = "./cdt_debug_draw.html";
-#  else
   const char *drawfile = "/tmp/cdt_debug_draw.html";
-#  endif
   constexpr int max_draw_width = 1800;
   constexpr int max_draw_height = 1600;
   constexpr double margin_expand = 0.05;

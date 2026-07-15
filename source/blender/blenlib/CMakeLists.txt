@@ -67,7 +67,6 @@ set(SRC
   intern/filereader_gzip.cc
   intern/filereader_memory.cc
   intern/filereader_zstd.cc
-  intern/fnmatch.cc
   intern/generic_vector_array.cc
   intern/generic_virtual_array.cc
   intern/generic_virtual_vector_array.cc
@@ -157,9 +156,6 @@ set(SRC
   intern/vector.cc
   intern/virtual_array.cc
   intern/voxel.cc
-  intern/winstuff.cc
-  intern/winstuff_dir.cc
-  intern/winstuff_registration.cc
   # Private headers.
   intern/BLI_mempool_private.h
 
@@ -411,8 +407,6 @@ set(SRC
   BLI_virtual_array_range_spans.hh
   BLI_virtual_vector_array.hh
   BLI_voxel.hh
-  BLI_winstuff.hh
-  BLI_winstuff_com.hh
 
   # Without these files listed, they aren't known to CMake.
   ../../../extern/json/include/json.hpp
@@ -449,26 +443,6 @@ endif()
 if(WITH_MEM_VALGRIND)
   add_definitions(-DWITH_MEM_VALGRIND)
 endif()
-
-if(WIN32)
-  if(WITH_BLENDER_THUMBNAILER)
-    # Needed for querying the `thumbnailer .dll` in `winstuff.c`.
-    add_definitions(-DWITH_BLENDER_THUMBNAILER)
-  endif()
-  list(APPEND INC
-    ../../../intern/uriconvert
-    ../../../intern/utfconv
-  )
-  list(APPEND LIB
-    bf_intern_uriconvert
-    bf_intern_utfconv
-    dxgi
-  )
-  list(APPEND SRC
-    intern/system_win32.cc
-  )
-endif()
-
 
 if(APPLE)
   list(APPEND SRC

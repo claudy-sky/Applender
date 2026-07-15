@@ -12,11 +12,6 @@ set(SRC
   msgfmt.cc
 )
 
-# Manifest required for selecting comctl32 v6 required by the crash popup.
-if(WIN32 AND NOT WITH_WINDOWS_EXTERNAL_MANIFEST)
-  LIST(APPEND SRC "${CMAKE_BINARY_DIR}/tests.exe.manifest")
-endif()
-
 set(LIB
   PRIVATE bf::blenlib
   PRIVATE bf::intern::guardedalloc
@@ -24,11 +19,6 @@ set(LIB
   ${PLATFORM_LINKLIBS})
 
 add_c_and_cxx_flags_custom_test(msgfmt)
-
-if(WIN32)
-  string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG " /nodefaultlib:MSVCRT.lib")
-  list(APPEND LIB bf_intern_utfconv)
-endif()
 
 add_executable(msgfmt ${SRC})
 setup_platform_linker_flags(msgfmt)

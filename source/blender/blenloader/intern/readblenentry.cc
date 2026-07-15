@@ -35,10 +35,6 @@
 
 namespace blender {
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 /* Access routines used by file-selector. */
 
 void BLO_datablock_info_free(BLODataBlockInfo *datablock_info)

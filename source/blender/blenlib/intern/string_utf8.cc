@@ -22,9 +22,6 @@
 
 #include "BLI_string.hh"      /* #BLI_string_debug_size. */
 #include "BLI_string_utf8.hh" /* own include */
-#ifdef WIN32
-#  include "utfconv.hh"
-#endif
 #ifdef __GNUC__
 #  pragma GCC diagnostic error "-Wsign-conversion"
 #endif
@@ -537,14 +534,7 @@ size_t BLI_strncpy_wchar_from_utf8(wchar_t *__restrict dst_w,
                                    const char *__restrict src_c,
                                    const size_t dst_w_maxncpy)
 {
-#ifdef WIN32
-  BLI_string_debug_size(dst_w, dst_w_maxncpy);
-  conv_utf_8_to_16(src_c, dst_w, dst_w_maxncpy);
-  /* NOTE: it would be more efficient to calculate the length as part of #conv_utf_8_to_16. */
-  return wcslen(dst_w);
-#else
   return BLI_str_utf8_as_utf32(reinterpret_cast<char32_t *>(dst_w), src_c, dst_w_maxncpy);
-#endif
 }
 
 /* End wchar_t / UTF8 functions. */

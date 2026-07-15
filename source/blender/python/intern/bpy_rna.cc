@@ -7310,11 +7310,7 @@ PyTypeObject pyrna_struct_meta_idprop_Type = {
     /*tp_methods*/ nullptr,
     /*tp_members*/ nullptr,
     /*tp_getset*/ nullptr,
-#if defined(_MSC_VER)
-    /*tp_base*/ nullptr, /* Defer assignment. */
-#else
     /*tp_base*/ &PyType_Type,
-#endif
     /*tp_dict*/ nullptr,
     /*tp_descr_get*/ nullptr,
     /*tp_descr_set*/ nullptr,
@@ -8833,11 +8829,6 @@ void BPY_rna_init()
 #ifdef USE_MATHUTILS /* Register mathutils callbacks, ok to run more than once. */
   mathutils_rna_array_cb_index = Mathutils_RegisterCallback(&mathutils_rna_array_cb);
   mathutils_rna_matrix_cb_index = Mathutils_RegisterCallback(&mathutils_rna_matrix_cb);
-#endif
-
-/* For some reason MSVC complains of these. */
-#if defined(_MSC_VER)
-  pyrna_struct_meta_idprop_Type.tp_base = &PyType_Type;
 #endif
 
   /* metaclass */

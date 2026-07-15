@@ -19,27 +19,15 @@
 #include <zlib.h>
 #include <zstd.h>
 
-#ifdef WIN32
-#  include "BLI_fileops_types.hh"
-#  include "BLI_string_utils.hh"
-#  include "BLI_winstuff.hh"
-#  include "utf_winfunc.hh"
-#  include "utfconv.hh"
-#  include <io.h>
-#  include <shellapi.h>
-#  include <shobjidl.h>
-#  include <windows.h>
-#else
-#  if defined(__APPLE__)
-#    include <CoreFoundation/CoreFoundation.h>
-#    include <objc/message.h>
-#    include <objc/runtime.h>
-#  endif
-#  include <dirent.h>
-#  include <sys/param.h>
-#  include <sys/wait.h>
-#  include <unistd.h>
+#if defined(__APPLE__)
+#  include <CoreFoundation/CoreFoundation.h>
+#  include <objc/message.h>
+#  include <objc/runtime.h>
 #endif
+#include <dirent.h>
+#include <sys/param.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -54,47 +42,6 @@ namespace blender {
 /** Sizes above this must be allocated. */
 #define FILE_MAX_STATIC_BUF 256
 
-#ifdef WIN32
-/* Text string used as the "verb" for Windows shell operations. */
-static const char *windows_operation_string(FileExternalOperation operation)
-{
-  switch (operation) {
-    case FILE_EXTERNAL_OPERATION_OPEN:
-      return "open";
-    case FILE_EXTERNAL_OPERATION_FOLDER_OPEN:
-      return "open";
-    case FILE_EXTERNAL_OPERATION_EDIT:
-      return "edit";
-    case FILE_EXTERNAL_OPERATION_NEW:
-      return "new";
-    case FILE_EXTERNAL_OPERATION_FIND:
-      return "find";
-    case FILE_EXTERNAL_OPERATION_SHOW:
-      return "show";
-    case FILE_EXTERNAL_OPERATION_PLAY:
-      return "play";
-    case FILE_EXTERNAL_OPERATION_BROWSE:
-      return "browse";
-    case FILE_EXTERNAL_OPERATION_PREVIEW:
-      return "preview";
-    case FILE_EXTERNAL_OPERATION_PRINT:
-      return "print";
-    case FILE_EXTERNAL_OPERATION_INSTALL:
-      return "install";
-    case FILE_EXTERNAL_OPERATION_RUNAS:
-      return "runas";
-    case FILE_EXTERNAL_OPERATION_PROPERTIES:
-      return "properties";
-    case FILE_EXTERNAL_OPERATION_FOLDER_FIND:
-      return "find";
-    case FILE_EXTERNAL_OPERATION_FOLDER_CMD:
-      return "cmd";
-  }
-  BLI_assert_unreachable();
-  return "";
-}
-#endif
-
 int64_t BLI_read(int fd, void *buf, size_t nbytes)
 {
   /* Define our own read as `read` is not guaranteed to read the number of bytes requested.
@@ -105,15 +52,7 @@ int64_t BLI_read(int fd, void *buf, size_t nbytes)
    * exiting on EOF with the second iteration. */
   int64_t nbytes_read_total = 0;
   while (true) {
-    int64_t nbytes_read = read(fd,
-                               buf,
-#ifdef WIN32
-                               /* Read must not exceed INT_MAX on WIN32, clamp. */
-                               std::min<size_t>(nbytes, INT_MAX)
-#else
-                               nbytes
-#endif
-    );
+    int64_t nbytes_read = read(fd, buf, nbytes);
     if (nbytes_read == nbytes) {
       /* Success (common case). */
       return nbytes_read_total + nbytes_read;
@@ -147,29 +86,14 @@ int64_t BLI_read(int fd, void *buf, size_t nbytes)
 
 bool BLI_file_external_operation_supported(const char *filepath, FileExternalOperation operation)
 {
-#ifdef WIN32
-  const char *opstring = windows_operation_string(operation);
-  return BLI_windows_external_operation_supported(filepath, opstring);
-#else
   UNUSED_VARS(filepath, operation);
   return false;
-#endif
 }
 
 bool BLI_file_external_operation_execute(const char *filepath, FileExternalOperation operation)
 {
-#ifdef WIN32
-  const char *opstring = windows_operation_string(operation);
-  if (BLI_windows_external_operation_supported(filepath, opstring) &&
-      BLI_windows_external_operation_execute(filepath, opstring))
-  {
-    return true;
-  }
-  return false;
-#else
   UNUSED_VARS(filepath, operation);
   return false;
-#endif
 }
 
 size_t BLI_file_zstd_from_mem_at_pos(
@@ -305,12 +229,7 @@ bool BLI_file_is_writable(const char *filepath)
     /* File doesn't exist -- check I can create it in parent directory. */
     char parent[FILE_MAX];
     BLI_path_split_dir_part(filepath, parent, sizeof(parent));
-#ifdef WIN32
-    /* Windows does not have X_OK. */
-    writable = BLI_access(parent, W_OK) == 0;
-#else
     writable = BLI_access(parent, X_OK | W_OK) == 0;
-#endif
   }
   return writable;
 }
@@ -368,10 +287,6 @@ static bool dir_create_recursive(const char *dirname, const int len)
   if (dirname_parent_end) {
     const char dirname_parent_end_value = *dirname_parent_end;
     *dirname_parent_end = '\0';
-#ifdef WIN32
-    /* Check special case `c:\foo`, don't try create `c:`, harmless but unnecessary. */
-    if (dirname[0] && !BLI_path_is_win32_drive_only(dirname))
-#endif
     {
       const int mode = BLI_file_stat_mode(dirname);
       if (mode != 0) {
@@ -390,16 +305,6 @@ static bool dir_create_recursive(const char *dirname, const int len)
      * earlier call to BLI_exists() and this call to mkdir. Since this function only creates a
      * directory if it doesn't exist yet, this is actually not seen as an error, even though
      * mkdir() failed. */
-#ifdef WIN32
-    if (umkdir(dirname) == -1) {
-      if (GetLastError() == ERROR_ALREADY_EXISTS && BLI_is_dir(dirname)) {
-        return true;
-      }
-
-      /* Any other error should bubble up as an actual error. */
-      ret = false;
-    }
-#else
     if (mkdir(dirname, 0777) != 0) {
       if (errno == EEXIST && BLI_is_dir(dirname)) {
         return true;
@@ -408,7 +313,6 @@ static bool dir_create_recursive(const char *dirname, const int len)
       /* Any other error should bubble up as an actual error. */
       ret = false;
     }
-#endif
   }
   return ret;
 }
@@ -498,25 +402,22 @@ int BLI_rename(const char *from, const char *to)
    * BSD systems do not have any such thing currently, and are therefore exposed to the TOC/TOU
    * issue. */
 
-#ifdef WIN32
-  return urename(from, to, false);
-#else
-#  if defined(__APPLE__)
+#if defined(__APPLE__)
   int ret = renamex_np(from, to, RENAME_EXCL);
   if (!(ret < 0 && errno == ENOTSUP)) {
     return ret;
   }
-#  endif
+#endif
 
-#  if defined(__GLIBC_PREREQ)
-#    if __GLIBC_PREREQ(2, 28)
+#if defined(__GLIBC_PREREQ)
+#  if __GLIBC_PREREQ(2, 28)
   /* Most common Linux case, use `RENAME_NOREPLACE` when available. */
   int ret = renameat2(AT_FDCWD, from, AT_FDCWD, to, RENAME_NOREPLACE);
   if (!(ret < 0 && errno == EINVAL)) {
     return ret;
   }
-#    endif /* __GLIBC_PREREQ(2, 28) */
-#  endif   /* __GLIBC_PREREQ */
+#  endif /* __GLIBC_PREREQ(2, 28) */
+#endif   /* __GLIBC_PREREQ */
   /* A naive non-atomic implementation, which is used for OS where atomic rename is not supported
    * at all, or not implemented for specific file systems (for example NFS, Samba, exFAT, NTFS,
    * etc). For those see #116049, #119966. */
@@ -524,7 +425,6 @@ int BLI_rename(const char *from, const char *to)
     return 1;
   }
   return rename(from, to);
-#endif     /* !defined(WIN32) */
 }
 
 int BLI_rename_overwrite(const char *from, const char *to)
@@ -533,354 +433,8 @@ int BLI_rename_overwrite(const char *from, const char *to)
     return 1;
   }
 
-#ifdef WIN32
-  /* `urename` from `utfconv` intern utils uses `MoveFileExW`, which allows to replace an existing
-   * file, but not an existing directory, even if empty. This will only delete empty directories.
-   */
-  if (BLI_is_dir(to)) {
-    if (BLI_delete(to, true, false)) {
-      return 1;
-    }
-  }
-  return urename(from, to, true);
-#else
   return rename(from, to);
-#endif
 }
-
-#ifdef WIN32
-
-static void callLocalErrorCallBack(const char *err)
-{
-  printf("%s\n", err);
-}
-
-FILE *BLI_fopen(const char *filepath, const char *mode)
-{
-  BLI_assert(!BLI_path_is_rel(filepath));
-
-  return ufopen(filepath, mode);
-}
-
-void BLI_get_short_name(char short_name[256], const char *filepath)
-{
-  wchar_t short_name_16[256];
-  int i = 0;
-
-  UTF16_ENCODE(filepath);
-
-  GetShortPathNameW(filepath_16, short_name_16, 256);
-
-  for (i = 0; i < 256; i++) {
-    short_name[i] = char(short_name_16[i]);
-  }
-
-  UTF16_UN_ENCODE(filepath);
-}
-
-void *BLI_gzopen(const char *filepath, const char *mode)
-{
-  gzFile gzfile;
-
-  BLI_assert(!BLI_path_is_rel(filepath));
-
-  /* XXX: Creates file before transcribing the path. */
-  if (mode[0] == 'w') {
-    FILE *file = ufopen(filepath, "a");
-    if (file == nullptr) {
-      /* File couldn't be opened, e.g. due to permission error. */
-      return nullptr;
-    }
-    fclose(file);
-  }
-
-  /* Temporary `#if` until we update all libraries to 1.2.7 for correct wide char path handling. */
-#  if ZLIB_VERNUM >= 0x1270
-  UTF16_ENCODE(filepath);
-
-  gzfile = gzopen_w(filepath_16, mode);
-
-  UTF16_UN_ENCODE(filepath);
-#  else
-  {
-    char short_name[256];
-    BLI_get_short_name(short_name, filepath);
-    gzfile = gzopen(short_name, mode);
-  }
-#  endif
-
-  return gzfile;
-}
-
-int BLI_open(const char *filepath, int oflag, int pmode)
-{
-  BLI_assert(!BLI_path_is_rel(filepath));
-
-  return uopen(filepath, oflag, pmode);
-}
-
-int BLI_access(const char *filepath, int mode)
-{
-  BLI_assert(!BLI_path_is_rel(filepath));
-
-  return uaccess(filepath, mode);
-}
-
-static bool delete_soft(const wchar_t *path_16, const char **r_error_message)
-{
-  /* Deletes file or directory to recycling bin. The latter moves all contained files and
-   * directories recursively to the recycling bin as well. */
-  IFileOperation *pfo;
-  IShellItem *psi;
-
-  HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-
-  if (SUCCEEDED(hr)) {
-    /* This is also the case when COM was previously initialized and CoInitializeEx returns
-     * S_FALSE, which is not an error. Both HRESULT values S_OK and S_FALSE indicate success. */
-
-    hr = CoCreateInstance(
-        CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_IFileOperation, (void **)&pfo);
-
-    if (SUCCEEDED(hr)) {
-      /* Flags for deletion:
-       * FOF_ALLOWUNDO: Enables moving file to recycling bin.
-       * FOF_SILENT: Don't show progress dialog box.
-       * FOF_WANTNUKEWARNING: Show dialog box if file can't be moved to recycling bin. */
-      hr = pfo->SetOperationFlags(FOF_ALLOWUNDO | FOF_SILENT | FOF_WANTNUKEWARNING);
-
-      if (SUCCEEDED(hr)) {
-        hr = SHCreateItemFromParsingName(path_16, nullptr, IID_IShellItem, (void **)&psi);
-
-        if (SUCCEEDED(hr)) {
-          hr = pfo->DeleteItem(psi, nullptr);
-
-          if (SUCCEEDED(hr)) {
-            hr = pfo->PerformOperations();
-
-            if (FAILED(hr)) {
-              *r_error_message = "Failed to prepare delete operation";
-            }
-          }
-          else {
-            *r_error_message = "Failed to prepare delete operation";
-          }
-          psi->Release();
-        }
-        else {
-          *r_error_message = "Failed to parse path";
-        }
-      }
-      else {
-        *r_error_message = "Failed to set operation flags";
-      }
-      pfo->Release();
-    }
-    else {
-      *r_error_message = "Failed to create FileOperation instance";
-    }
-    CoUninitialize();
-  }
-  else {
-    *r_error_message = "Failed to initialize COM";
-  }
-
-  return FAILED(hr);
-}
-
-static bool delete_unique(const char *path, const bool dir)
-{
-  bool err;
-
-  UTF16_ENCODE(path);
-
-  if (dir) {
-    err = !RemoveDirectoryW(path_16);
-    if (err) {
-      printf("Unable to remove directory\n");
-    }
-  }
-  else {
-    err = !DeleteFileW(path_16);
-    if (err) {
-      callLocalErrorCallBack("Unable to delete file");
-    }
-  }
-
-  UTF16_UN_ENCODE(path);
-
-  return err;
-}
-
-static bool delete_recursive(const char *dir)
-{
-  struct direntry *filelist, *fl;
-  bool err = false;
-  uint filelist_num, i;
-
-  i = filelist_num = BLI_filelist_dir_contents(dir, &filelist);
-  fl = filelist;
-  while (i--) {
-    if (FILENAME_IS_CURRPAR(fl->relname)) {
-      /* Skip! */
-    }
-    else if (S_ISDIR(fl->type)) {
-      char path[FILE_MAXDIR];
-
-      /* dir listing produces dir path without trailing slash... */
-      STRNCPY(path, fl->path);
-      BLI_path_slash_ensure(path, sizeof(path));
-
-      if (delete_recursive(path)) {
-        err = true;
-      }
-    }
-    else {
-      if (delete_unique(fl->path, false)) {
-        err = true;
-      }
-    }
-    fl++;
-  }
-
-  if (!err && delete_unique(dir, true)) {
-    err = true;
-  }
-
-  BLI_filelist_free(filelist, filelist_num);
-
-  return err;
-}
-
-int BLI_delete(const char *path, bool dir, bool recursive)
-{
-  int err;
-
-  BLI_assert(!BLI_path_is_rel(path));
-
-  /* Not an error but avoid ambiguous arguments (recursive file deletion isn't meaningful). */
-  BLI_assert(!(dir == false && recursive == true));
-
-  if (recursive) {
-    err = delete_recursive(path);
-  }
-  else {
-    err = delete_unique(path, dir);
-  }
-
-  return err;
-}
-
-/**
- * Moves the files or directories to the recycling bin.
- */
-int BLI_delete_soft(const char *file, const char **r_error_message)
-{
-  int err;
-
-  BLI_assert(!BLI_path_is_rel(file));
-
-  UTF16_ENCODE(file);
-
-  err = delete_soft(file_16, r_error_message);
-
-  UTF16_UN_ENCODE(file);
-
-  return err;
-}
-
-/**
- * MS-Windows doesn't support moving to a directory, it has to be
- * `mv filepath filepath` and not `mv filepath destination_directory` (same for copying).
- *
- * So when `path_dst` ends with as slash:
- * ensure the filename component of `path_src` is added to a copy of `path_dst`.
- */
-static const char *path_destination_ensure_filename(const char *path_src,
-                                                    const char *path_dst,
-                                                    char *buf,
-                                                    size_t buf_size)
-{
-  const char *filename_src = BLI_path_basename(path_src);
-  /* Unlikely but possible this has no slashes. */
-  if (filename_src != path_src) {
-    const size_t path_dst_len = strlen(path_dst);
-    /* Check if `path_dst` points to a directory. */
-    if (path_dst_len && BLI_path_slash_is_native_compat(path_dst[path_dst_len - 1])) {
-      size_t buf_size_needed = path_dst_len + strlen(filename_src) + 1;
-      char *path_dst_with_filename = (buf_size_needed <= buf_size) ?
-                                         buf :
-                                         MEM_new_array_zeroed<char>(buf_size_needed, __func__);
-      BLI_string_join(path_dst_with_filename, buf_size_needed, path_dst, filename_src);
-      return path_dst_with_filename;
-    }
-  }
-  return path_dst;
-}
-
-int BLI_path_move(const char *path_src, const char *path_dst)
-{
-  char path_dst_buf[FILE_MAX_STATIC_BUF];
-  const char *path_dst_with_filename = path_destination_ensure_filename(
-      path_src, path_dst, path_dst_buf, sizeof(path_dst_buf));
-
-  int err;
-
-  UTF16_ENCODE(path_src);
-  UTF16_ENCODE(path_dst_with_filename);
-  err = !MoveFileW(path_src_16, path_dst_with_filename_16);
-  UTF16_UN_ENCODE(path_dst_with_filename);
-  UTF16_UN_ENCODE(path_src);
-
-  if (err) {
-    callLocalErrorCallBack("Unable to move file");
-    printf(" Move from '%s' to '%s' failed\n", path_src, path_dst_with_filename);
-  }
-
-  if (!ELEM(path_dst_with_filename, path_dst_buf, path_dst)) {
-    MEM_delete(path_dst_with_filename);
-  }
-
-  return err;
-}
-
-int BLI_copy(const char *path_src, const char *path_dst)
-{
-  char path_dst_buf[FILE_MAX_STATIC_BUF];
-  const char *path_dst_with_filename = path_destination_ensure_filename(
-      path_src, path_dst, path_dst_buf, sizeof(path_dst_buf));
-  int err;
-
-  UTF16_ENCODE(path_src);
-  UTF16_ENCODE(path_dst_with_filename);
-  err = !CopyFileW(path_src_16, path_dst_with_filename_16, false);
-  UTF16_UN_ENCODE(path_dst_with_filename);
-  UTF16_UN_ENCODE(path_src);
-
-  if (err) {
-    callLocalErrorCallBack("Unable to copy file!");
-    printf(" Copy from '%s' to '%s' failed\n", path_src, path_dst_with_filename);
-  }
-
-  if (!ELEM(path_dst_with_filename, path_dst_buf, path_dst)) {
-    MEM_delete(path_dst_with_filename);
-  }
-
-  return err;
-}
-
-#  if 0
-int BLI_create_symlink(const char *path_src, const char *path_dst)
-{
-  /* See patch from #30870, should this ever become needed. */
-  callLocalErrorCallBack("Linking files is unsupported on Windows");
-  (void)path_src;
-  (void)path_dst;
-  return 1;
-}
-#  endif
-
-#else /* The UNIX world */
 
 /* results from recursive_operation and its callbacks */
 enum {
@@ -1562,13 +1116,11 @@ int BLI_copy(const char *path_src, const char *path_dst)
   return ret;
 }
 
-#  if 0
+#if 0
 int BLI_create_symlink(const char *path_src, const char *path_dst)
 {
   return symlink(path_dst, path_src);
 }
-#  endif
-
 #endif
 
 }  // namespace blender

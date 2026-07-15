@@ -34,15 +34,6 @@
 
 namespace blender {
 
-/* Stupid stub necessary because some BLI files includes winstuff.h, which uses G a bit... */
-#ifdef WIN32
-struct Global {
-  void *dummy;
-};
-
-Global G;
-#endif
-
 enum eSectionType {
   SECTION_NONE = 0,
   SECTION_CTX = 1,

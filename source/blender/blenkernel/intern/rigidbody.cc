@@ -2301,9 +2301,6 @@ void BKE_rigidbody_do_simulation(Depsgraph *depsgraph, Scene *scene, float ctime
 #  if defined(__GNUC__) || defined(__clang__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
-#  elif defined(_MSC_VER)
-/* Suppress unreferenced formal parameter warning. */
-#    pragma warning(disable : 4100)
 #  endif
 
 void BKE_rigidbody_validate_sim_world(Scene *scene, RigidBodyWorld *rbw, bool rebuild) {}
