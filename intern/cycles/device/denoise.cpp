@@ -9,8 +9,6 @@ CCL_NAMESPACE_BEGIN
 const char *denoiserTypeToHumanReadable(DenoiserType type)
 {
   switch (type) {
-    case DENOISER_OPTIX:
-      return "OptiX";
     case DENOISER_OPENIMAGEDENOISE:
       return "OpenImageDenoise";
 
@@ -28,7 +26,6 @@ const NodeEnum *DenoiseParams::get_type_enum()
   static NodeEnum type_enum;
 
   if (type_enum.empty()) {
-    type_enum.insert("optix", DENOISER_OPTIX);
     type_enum.insert("openimageio", DENOISER_OPENIMAGEDENOISE);
   }
 

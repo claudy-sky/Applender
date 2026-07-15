@@ -47,41 +47,6 @@ class DebugFlags {
     BVHLayout bvh_layout = BVH_LAYOUT_AUTO;
   };
 
-  /* Descriptor of CUDA feature-set to be used. */
-  struct CUDA {
-    CUDA();
-
-    /* Reset flags to their defaults. */
-    void reset();
-
-    /* Whether adaptive feature based runtime compile is enabled or not.
-     * Requires the CUDA Toolkit and only works on Linux at the moment. */
-    bool adaptive_compile = false;
-  };
-
-  /* Descriptor of HIP feature-set to be used. */
-  struct HIP {
-    HIP();
-
-    /* Reset flags to their defaults. */
-    void reset();
-
-    /* Whether adaptive feature based runtime compile is enabled or not. */
-    bool adaptive_compile = false;
-  };
-
-  /* Descriptor of OptiX feature-set to be used. */
-  struct OptiX {
-    OptiX();
-
-    /* Reset flags to their defaults. */
-    void reset();
-
-    /* Load OptiX module with debug capabilities. Will lower logging verbosity level, enable
-     * validations, and lower optimization level. */
-    bool use_debug = false;
-  };
-
   /* Descriptor of Metal feature-set to be used. */
   struct Metal {
     Metal();
@@ -134,15 +99,6 @@ class DebugFlags {
 
   /* Requested CPU flags. */
   CPU cpu;
-
-  /* Requested CUDA flags. */
-  CUDA cuda;
-
-  /* Requested OptiX flags. */
-  OptiX optix;
-
-  /* Requested HIP flags. */
-  HIP hip;
 
   /* Requested Metal flags. */
   Metal metal;

@@ -12,13 +12,9 @@
 
 #include "device/cpu/device.h"
 #include "device/cpu/kernel.h"
-#include "device/cuda/device.h"
 #include "device/dummy/device.h"
-#include "device/hip/device.h"
 #include "device/metal/device.h"
 #include "device/multi/device.h"
-#include "device/oneapi/device.h"
-#include "device/optix/device.h"
 
 #include "util/log.h"
 #include "util/math.h"
@@ -36,37 +32,13 @@ thread_mutex Device::device_mutex;
 uint Device::devices_initialized_mask = 0;
 
 /* Lazily init inside function so they get destructed before guardedalloc leak check. */
-vector<DeviceInfo> &Device::cuda_devices()
-{
-  static vector<DeviceInfo> devices_;
-  return devices_;
-}
-
-vector<DeviceInfo> &Device::optix_devices()
-{
-  static vector<DeviceInfo> devices_;
-  return devices_;
-}
-
 vector<DeviceInfo> &Device::cpu_devices()
 {
   static vector<DeviceInfo> devices_;
   return devices_;
 }
 
-vector<DeviceInfo> &Device::hip_devices()
-{
-  static vector<DeviceInfo> devices_;
-  return devices_;
-}
-
 vector<DeviceInfo> &Device::metal_devices()
-{
-  static vector<DeviceInfo> devices_;
-  return devices_;
-}
-
-vector<DeviceInfo> &Device::oneapi_devices()
 {
   static vector<DeviceInfo> devices_;
   return devices_;
@@ -116,40 +88,12 @@ unique_ptr<Device> Device::create(const DeviceInfo &info,
     case DEVICE_CPU:
       device = device_cpu_create(info, stats, profiler, headless);
       break;
-#ifdef WITH_CUDA
-    case DEVICE_CUDA:
-      if (device_cuda_init()) {
-        device = device_cuda_create(info, stats, profiler, headless);
-      }
-      break;
-#endif
-#ifdef WITH_OPTIX
-    case DEVICE_OPTIX:
-      if (device_optix_init()) {
-        device = device_optix_create(info, stats, profiler, headless);
-      }
-      break;
-#endif
-
-#ifdef WITH_HIP
-    case DEVICE_HIP:
-      if (device_hip_init()) {
-        device = device_hip_create(info, stats, profiler, headless);
-      }
-      break;
-#endif
 
 #ifdef WITH_METAL
     case DEVICE_METAL:
       if (device_metal_init()) {
         device = device_metal_create(info, stats, profiler, headless);
       }
-      break;
-#endif
-
-#ifdef WITH_ONEAPI
-    case DEVICE_ONEAPI:
-      device = device_oneapi_create(info, stats, profiler, headless);
       break;
 #endif
 
@@ -169,26 +113,11 @@ DeviceType Device::type_from_string(const char *name)
   if (strcmp(name, "CPU") == 0) {
     return DEVICE_CPU;
   }
-  if (strcmp(name, "CUDA") == 0) {
-    return DEVICE_CUDA;
-  }
-  if (strcmp(name, "OPTIX") == 0) {
-    return DEVICE_OPTIX;
-  }
   if (strcmp(name, "MULTI") == 0) {
     return DEVICE_MULTI;
   }
-  if (strcmp(name, "HIP") == 0) {
-    return DEVICE_HIP;
-  }
   if (strcmp(name, "METAL") == 0) {
     return DEVICE_METAL;
-  }
-  if (strcmp(name, "ONEAPI") == 0) {
-    return DEVICE_ONEAPI;
-  }
-  if (strcmp(name, "HIPRT") == 0) {
-    return DEVICE_HIPRT;
   }
 
   return DEVICE_NONE;
@@ -199,26 +128,11 @@ string Device::string_from_type(DeviceType type)
   if (type == DEVICE_CPU) {
     return "CPU";
   }
-  if (type == DEVICE_CUDA) {
-    return "CUDA";
-  }
-  if (type == DEVICE_OPTIX) {
-    return "OPTIX";
-  }
   if (type == DEVICE_MULTI) {
     return "MULTI";
   }
-  if (type == DEVICE_HIP) {
-    return "HIP";
-  }
   if (type == DEVICE_METAL) {
     return "METAL";
-  }
-  if (type == DEVICE_ONEAPI) {
-    return "ONEAPI";
-  }
-  if (type == DEVICE_HIPRT) {
-    return "HIPRT";
   }
 
   return "";
@@ -228,23 +142,8 @@ vector<DeviceType> Device::available_types()
 {
   vector<DeviceType> types;
   types.push_back(DEVICE_CPU);
-#ifdef WITH_CUDA
-  types.push_back(DEVICE_CUDA);
-#endif
-#ifdef WITH_OPTIX
-  types.push_back(DEVICE_OPTIX);
-#endif
-#ifdef WITH_HIP
-  types.push_back(DEVICE_HIP);
-#endif
 #ifdef WITH_METAL
   types.push_back(DEVICE_METAL);
-#endif
-#ifdef WITH_ONEAPI
-  types.push_back(DEVICE_ONEAPI);
-#endif
-#ifdef WITH_HIPRT
-  types.push_back(DEVICE_HIPRT);
 #endif
   return types;
 }
@@ -256,94 +155,6 @@ vector<DeviceInfo> Device::available_devices(const uint mask)
    * we don't want to do any initialization until the user chooses to. */
   const thread_scoped_lock lock(device_mutex);
   vector<DeviceInfo> devices;
-
-#if defined(WITH_CUDA) || defined(WITH_OPTIX)
-  if (mask & (DEVICE_MASK_CUDA | DEVICE_MASK_OPTIX)) {
-    if (!(devices_initialized_mask & DEVICE_MASK_CUDA)) {
-      if (device_cuda_init()) {
-        device_cuda_info(cuda_devices());
-      }
-      devices_initialized_mask |= DEVICE_MASK_CUDA;
-    }
-    if (mask & DEVICE_MASK_CUDA) {
-      for (DeviceInfo &info : cuda_devices()) {
-        devices.push_back(info);
-      }
-    }
-  }
-#endif
-
-#ifdef WITH_OPTIX
-  if (mask & DEVICE_MASK_OPTIX) {
-    if (!(devices_initialized_mask & DEVICE_MASK_OPTIX)) {
-      bool meets_nvidia_driver_requirement = true;
-      if (device_optix_init(&meets_nvidia_driver_requirement) || !meets_nvidia_driver_requirement)
-      {
-        device_optix_info(cuda_devices(), optix_devices());
-        for (DeviceInfo &info : optix_devices()) {
-          info.meets_driver_requirement = meets_nvidia_driver_requirement;
-        }
-      }
-      else {
-        /* `device_optix_init` has failed but not because of the driver being too old.
-         * Nothing to do in this case. */
-      }
-      devices_initialized_mask |= DEVICE_MASK_OPTIX;
-    }
-    for (DeviceInfo &info : optix_devices()) {
-      devices.push_back(info);
-    }
-  }
-#endif
-
-#ifdef WITH_HIP
-  if (mask & DEVICE_MASK_HIP) {
-    if (!(devices_initialized_mask & DEVICE_MASK_HIP)) {
-      bool meets_amd_driver_requirement = true;
-      if (device_hip_init(&meets_amd_driver_requirement)) {
-        device_hip_info(hip_devices());
-        for (DeviceInfo &info : hip_devices()) {
-          info.meets_driver_requirement = meets_amd_driver_requirement;
-        }
-      }
-      else if (meets_amd_driver_requirement == false) {
-        /* If we are here, then hipewInit has failed with HIPEW_ERROR_OLD_DRIVER. */
-        /* It is unclear if proper device info can be collected at this point, so we create
-         * a placeholder device to communicate the need to upgrade the driver, as presumably
-         * the hardware is available. */
-        DeviceInfo info = DeviceInfo();
-        info.type = DEVICE_HIP;
-        info.description = "Unknown AMD device";
-        info.id = "unknown_amd_device_with_outdated_driver";
-        info.num = 0;
-        info.meets_driver_requirement = false;
-        hip_devices().push_back(info);
-      }
-      else {
-        /* `device_hip_init` has failed but not because of the driver being too old.
-         * Nothing to do in this case. */
-      }
-      devices_initialized_mask |= DEVICE_MASK_HIP;
-    }
-    for (DeviceInfo &info : hip_devices()) {
-      devices.push_back(info);
-    }
-  }
-#endif
-
-#ifdef WITH_ONEAPI
-  if (mask & DEVICE_MASK_ONEAPI) {
-    if (!(devices_initialized_mask & DEVICE_MASK_ONEAPI)) {
-      if (device_oneapi_init()) {
-        device_oneapi_info(oneapi_devices());
-      }
-      devices_initialized_mask |= DEVICE_MASK_ONEAPI;
-    }
-    for (DeviceInfo &info : oneapi_devices()) {
-      devices.push_back(info);
-    }
-  }
-#endif
 
   if (mask & DEVICE_MASK_CPU) {
     if (!(devices_initialized_mask & DEVICE_MASK_CPU)) {
@@ -389,42 +200,6 @@ string Device::device_capabilities(const uint mask)
     capabilities += "\nCPU device capabilities: ";
     capabilities += device_cpu_capabilities() + "\n";
   }
-
-#ifdef WITH_CUDA
-  if (mask & DEVICE_MASK_CUDA) {
-    if (device_cuda_init()) {
-      const string device_capabilities = device_cuda_capabilities();
-      if (!device_capabilities.empty()) {
-        capabilities += "\nCUDA device capabilities:\n";
-        capabilities += device_capabilities;
-      }
-    }
-  }
-#endif
-
-#ifdef WITH_HIP
-  if (mask & DEVICE_MASK_HIP) {
-    if (device_hip_init()) {
-      const string device_capabilities = device_hip_capabilities();
-      if (!device_capabilities.empty()) {
-        capabilities += "\nHIP device capabilities:\n";
-        capabilities += device_capabilities;
-      }
-    }
-  }
-#endif
-
-#ifdef WITH_ONEAPI
-  if (mask & DEVICE_MASK_ONEAPI) {
-    if (device_oneapi_init()) {
-      const string device_capabilities = device_oneapi_capabilities();
-      if (!device_capabilities.empty()) {
-        capabilities += "\noneAPI device capabilities:\n";
-        capabilities += device_capabilities;
-      }
-    }
-  }
-#endif
 
 #ifdef WITH_METAL
   if (mask & DEVICE_MASK_METAL) {
@@ -528,10 +303,6 @@ void Device::tag_update()
 void Device::free_memory()
 {
   devices_initialized_mask = 0;
-  cuda_devices().free_memory();
-  optix_devices().free_memory();
-  hip_devices().free_memory();
-  oneapi_devices().free_memory();
   cpu_devices().free_memory();
   metal_devices().free_memory();
 }

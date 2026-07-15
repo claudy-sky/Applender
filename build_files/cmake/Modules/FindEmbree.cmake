@@ -49,11 +49,6 @@ if(EMBREE_INCLUDE_DIR)
   else()
     set(EMBREE_STATIC_LIB FALSE)
   endif()
-  if(_embree_config_header MATCHES "#define EMBREE_SYCL_SUPPORT")
-    set(EMBREE_SYCL_SUPPORT TRUE)
-  else()
-    set(EMBREE_SYCL_SUPPORT FALSE)
-  endif()
   unset(_embree_config_header)
 endif()
 
@@ -66,17 +61,9 @@ if(EMBREE_STATIC_LIB)
     )
   endif()
 
-  if(EMBREE_SYCL_SUPPORT)
-    set(_embree_GPU_COMPONENTS
-      embree4_sycl
-      embree_rthwif
-    )
-  endif()
-
   set(_embree_FIND_COMPONENTS
     embree${EMBREE_MAJOR_VERSION}
     ${_embree_SIMD_COMPONENTS}
-    ${_embree_GPU_COMPONENTS}
     lexers
     math
     simd
@@ -87,11 +74,6 @@ else()
   set(_embree_FIND_COMPONENTS
     embree${EMBREE_MAJOR_VERSION}
   )
-  if(EMBREE_SYCL_SUPPORT)
-    list(APPEND _embree_FIND_COMPONENTS
-      embree4_sycl
-    )
-  endif()
 endif()
 
 set(_embree_LIBRARIES "")
@@ -122,7 +104,6 @@ endif()
 mark_as_advanced(
   EMBREE_INCLUDE_DIR
   EMBREE_MAJOR_VERSION
-  EMBREE_SYCL_SUPPORT
   EMBREE_STATIC_LIB
 )
 

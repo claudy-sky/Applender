@@ -282,10 +282,7 @@ void CPUDevice::build_bvh(BVH *bvh, Progress &progress, bool refit)
 {
 #ifdef WITH_EMBREE
   if (bvh->params.bvh_layout == BVH_LAYOUT_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_OPTIX_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_METAL_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_HIPRT_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE)
+      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_METAL_EMBREE)
   {
     BVHEmbree *const bvh_embree = static_cast<BVHEmbree *>(bvh);
     if (refit) {

@@ -13,14 +13,8 @@
 #ifdef WITH_EMBREE
 #  include "bvh/embree.h"
 #endif
-#ifdef WITH_HIPRT
-#  include "bvh/hiprt.h"
-#endif
 #ifdef WITH_METAL
 #  include "bvh/metal.h"
-#endif
-#ifdef WITH_OPTIX
-#  include "bvh/optix.h"
 #endif
 
 #include "util/log.h"
@@ -38,12 +32,8 @@ const char *bvh_layout_name(BVHLayout layout)
       return "BVH2";
     case BVH_LAYOUT_EMBREE:
       return "EMBREE";
-    case BVH_LAYOUT_OPTIX:
-      return "OPTIX";
     case BVH_LAYOUT_METAL:
       return "METAL";
-    case BVH_LAYOUT_HIPRT:
-      return "HIPRT";
     case BVH_LAYOUT_EMBREEGPU:
       return "EMBREEGPU";
     case BVH_LAYOUT_MULTI_OPTIX:
@@ -57,6 +47,9 @@ const char *bvh_layout_name(BVHLayout layout)
       return "MULTI";
     case BVH_LAYOUT_ALL:
       return "ALL";
+    case BVH_LAYOUT_OPTIX:
+    case BVH_LAYOUT_HIPRT:
+      break;
   }
   LOG_DFATAL << "Unsupported BVH layout was passed.";
   return "";
@@ -109,13 +102,6 @@ unique_ptr<BVH> BVH::create(const BVHParams &params,
 #else
       break;
 #endif
-    case BVH_LAYOUT_OPTIX:
-#ifdef WITH_OPTIX
-      return make_unique<BVHOptiX>(params, geometry, objects, device);
-#else
-      (void)device;
-      break;
-#endif
     case BVH_LAYOUT_METAL:
 #ifdef WITH_METAL
       return bvh_metal_create(params, geometry, objects, device);
@@ -123,13 +109,10 @@ unique_ptr<BVH> BVH::create(const BVHParams &params,
       (void)device;
       break;
 #endif
+    case BVH_LAYOUT_OPTIX:
     case BVH_LAYOUT_HIPRT:
-#ifdef WITH_HIPRT
-      return make_unique<BVHHIPRT>(params, geometry, objects, device);
-#else
       (void)device;
       break;
-#endif
     case BVH_LAYOUT_MULTI_OPTIX:
     case BVH_LAYOUT_MULTI_METAL:
     case BVH_LAYOUT_MULTI_HIPRT:

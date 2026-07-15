@@ -34,33 +34,9 @@ void DebugFlags::CPU::reset()
   bvh_layout = BVH_LAYOUT_AUTO;
 }
 
-DebugFlags::CUDA::CUDA()
-{
-  reset();
-}
-
-DebugFlags::HIP::HIP()
-{
-  reset();
-}
-
 DebugFlags::Metal::Metal()
 {
   reset();
-}
-
-void DebugFlags::CUDA::reset()
-{
-  if (getenv("CYCLES_CUDA_ADAPTIVE_COMPILE") != nullptr) {
-    adaptive_compile = true;
-  }
-}
-
-void DebugFlags::HIP::reset()
-{
-  if (getenv("CYCLES_HIP_ADAPTIVE_COMPILE") != nullptr) {
-    adaptive_compile = true;
-  }
 }
 
 void DebugFlags::Metal::reset()
@@ -101,21 +77,9 @@ void DebugFlags::TextureCache::reset()
   preserve_unused = 0;
 }
 
-DebugFlags::OptiX::OptiX()
-{
-  reset();
-}
-
-void DebugFlags::OptiX::reset()
-{
-  use_debug = false;
-}
-
 void DebugFlags::reset()
 {
   cpu.reset();
-  cuda.reset();
-  optix.reset();
   metal.reset();
   texture_cache.reset();
 }

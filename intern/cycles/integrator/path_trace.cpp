@@ -546,8 +546,7 @@ void PathTrace::set_denoiser_params(const DenoiseParams &params)
 
     const bool is_cpu_denoising = old_denoiser_params.type == DENOISER_OPENIMAGEDENOISE &&
                                   old_denoiser_params.use_gpu == false;
-    const bool requested_gpu_denoising = effective_denoise_params.type == DENOISER_OPTIX ||
-                                         (effective_denoise_params.type ==
+    const bool requested_gpu_denoising = (effective_denoise_params.type ==
                                               DENOISER_OPENIMAGEDENOISE &&
                                           effective_denoise_params.use_gpu == true);
     if (requested_gpu_denoising && is_cpu_denoising &&
@@ -561,10 +560,8 @@ void PathTrace::set_denoiser_params(const DenoiseParams &params)
 
     const bool is_same_denoising_device_type = old_denoiser_params.use_gpu ==
                                                effective_denoise_params.use_gpu;
-    /* Optix Denoiser is not supporting CPU devices, so use_gpu option is not
-     * shown in the UI and changes in the option value should not be checked. */
     if (old_denoiser_params.type == effective_denoise_params.type &&
-        (is_same_denoising_device_type || effective_denoise_params.type == DENOISER_OPTIX))
+        is_same_denoising_device_type)
     {
       denoiser_->set_params(effective_denoise_params);
     }
@@ -1273,16 +1270,6 @@ static const char *device_type_for_description(const DeviceType type)
 
     case DEVICE_CPU:
       return "CPU";
-    case DEVICE_CUDA:
-      return "CUDA";
-    case DEVICE_OPTIX:
-      return "OptiX";
-    case DEVICE_HIP:
-      return "HIP";
-    case DEVICE_HIPRT:
-      return "HIPRT";
-    case DEVICE_ONEAPI:
-      return "oneAPI";
     case DEVICE_DUMMY:
       return "Dummy";
     case DEVICE_MULTI:
