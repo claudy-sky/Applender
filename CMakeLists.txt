@@ -636,88 +636,9 @@ mark_as_advanced(WITH_CYCLES_PRECOMPUTE)
 mark_as_advanced(CYCLES_TEST_DEVICES)
 mark_as_advanced(WITH_CYCLES_TEST_OSL)
 
-# NVIDIA CUDA & OptiX
-if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
-  option(WITH_CYCLES_DEVICE_CUDA "Enable Cycles NVIDIA CUDA compute support" ON)
-  option(WITH_CYCLES_DEVICE_OPTIX "Enable Cycles NVIDIA OptiX support" ON)
-  mark_as_advanced(WITH_CYCLES_DEVICE_CUDA)
-
-  option(WITH_CYCLES_CUDA_BINARIES "Build Cycles NVIDIA CUDA binaries" OFF)
-  set(CYCLES_CUDA_BINARIES_ARCH
-    sm_50 sm_52 sm_60 sm_70 sm_75 sm_86 sm_120 compute_75
-    CACHE STRING "CUDA architectures to build binaries for"
-  )
-  option(WITH_CYCLES_CUDA_BUILD_SERIAL "\
-Build cubins one after another (useful on machines with limited RAM)"
-    OFF
-  )
-  option(WITH_CUDA_DYNLOAD "\
-Dynamically load CUDA libraries at runtime (for developers, makes cuda-gdb work)"
-    ON
-  )
-
-  set(OPTIX_ROOT_DIR "" CACHE PATH "\
-Path to the OptiX SDK root directory, for building Cycles OptiX kernels."
-  )
-  set(CYCLES_RUNTIME_OPTIX_ROOT_DIR "" CACHE PATH "\
-Path to the OptiX SDK root directory. \
-When set, this path will be used at runtime to compile OptiX kernels."
-  )
-
-  mark_as_advanced(CYCLES_CUDA_BINARIES_ARCH)
-  mark_as_advanced(WITH_CYCLES_CUDA_BUILD_SERIAL)
-  mark_as_advanced(WITH_CUDA_DYNLOAD)
-  mark_as_advanced(OPTIX_ROOT_DIR)
-  mark_as_advanced(CYCLES_RUNTIME_OPTIX_ROOT_DIR)
-endif()
-
-# AMD HIP
-if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
-  option(WITH_CYCLES_DEVICE_HIP "Enable Cycles AMD HIP support" ON)
-  option(WITH_CYCLES_HIP_BINARIES "Build Cycles AMD HIP binaries" OFF)
-  # We only support RDNA1 (gfx101X) and newer.
-  # Vega and older generations have rendering artifacts and crashing issues.
-  set(CYCLES_HIP_BINARIES_ARCH
-    gfx1010 gfx1011 gfx1012
-    gfx1030 gfx1031 gfx1032 gfx1034 gfx1035 gfx1036
-    gfx1100 gfx1101 gfx1102 gfx1103 gfx1150 gfx1151 gfx1152
-    gfx1200 gfx1201
-    CACHE STRING "AMD HIP architectures to build binaries for"
-  )
-  mark_as_advanced(WITH_CYCLES_DEVICE_HIP)
-  mark_as_advanced(CYCLES_HIP_BINARIES_ARCH)
-
-  option(WITH_CYCLES_DEVICE_HIPRT "Enable Cycles AMD HIPRT support" OFF)
-  mark_as_advanced(WITH_CYCLES_DEVICE_HIPRT)
-endif()
-
 # Apple Metal
 if(APPLE)
   option(WITH_CYCLES_DEVICE_METAL "Enable Cycles Apple Metal compute support" ON)
-endif()
-
-# oneAPI
-if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
-  option(WITH_CYCLES_DEVICE_ONEAPI "Enable Cycles oneAPI compute support" OFF)
-  option(WITH_CYCLES_ONEAPI_BINARIES "\
-Enable Ahead-Of-Time compilation for Cycles oneAPI device"
-    OFF
-  )
-
-  # https://www.intel.com/content/www/us/en/develop/documentation/oneapi-dpcpp-cpp-compiler-dev-guide-and-reference/top/compilation/ahead-of-time-compilation.html
-  # The supported devices can be retrieved from `ocloc` output when running
-  # `ocloc compile --help`.
-  # If you have completed optimization work and now want to enable AoT for new Intel devices,
-  # update the optimization status in OneapiDevice::architecture_information.
-  set(CYCLES_ONEAPI_INTEL_BINARIES_ARCH dg2 mtl arl-h bmg lnl ptl CACHE STRING "\
-oneAPI Intel GPU architectures to build binaries for"
-  )
-  set(CYCLES_ONEAPI_SYCL_TARGETS spir64 spir64_gen CACHE STRING "\
-oneAPI targets to build AOT binaries for"
-  )
-
-  mark_as_advanced(CYCLES_ONEAPI_INTEL_BINARIES_ARCH)
-  mark_as_advanced(CYCLES_ONEAPI_SYCL_TARGETS)
 endif()
 
 # Draw Manager
@@ -1376,25 +1297,6 @@ if(WITH_AUDASPACE)
     )
   endif()
 endif()
-
-# Auto-enable CUDA dynload if toolkit is not found.
-if(WITH_CYCLES AND WITH_CYCLES_DEVICE_CUDA AND NOT WITH_CUDA_DYNLOAD)
-  find_package(CUDA)
-  if(NOT CUDA_FOUND)
-    message(
-      STATUS
-      "CUDA toolkit not found, "
-      "using dynamic runtime loading of libraries (WITH_CUDA_DYNLOAD) instead"
-    )
-    set(WITH_CUDA_DYNLOAD ON)
-  endif()
-endif()
-
-if(WITH_CYCLES_DEVICE_HIP)
-  # Currently HIP must be dynamically loaded, this may change in future toolkits
-  set(WITH_HIP_DYNLOAD ON)
-endif()
-
 
 # -----------------------------------------------------------------------------
 # Check if Sub-modules are Cloned
@@ -2440,12 +2342,6 @@ elseif(WITH_CYCLES_STANDALONE OR WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   add_subdirectory(intern/sky)
 
   add_subdirectory(intern/cycles)
-  if(WITH_CUDA_DYNLOAD)
-    add_subdirectory(extern/cuew)
-  endif()
-  if(WITH_HIP_DYNLOAD)
-    add_subdirectory(extern/hipew)
-  endif()
 endif()
 
 
@@ -2607,16 +2503,6 @@ if(FIRST_RUN)
     info_cfg_option(WITH_CYCLES_OSL)
     info_cfg_option(WITH_CYCLES_EMBREE)
     info_cfg_option(WITH_CYCLES_PATH_GUIDING)
-    if(NOT APPLE)
-      info_cfg_option(WITH_CYCLES_DEVICE_OPTIX)
-      info_cfg_option(WITH_CYCLES_DEVICE_CUDA)
-      info_cfg_option(WITH_CYCLES_CUDA_BINARIES)
-      info_cfg_option(WITH_CYCLES_DEVICE_ONEAPI)
-      info_cfg_option(WITH_CYCLES_ONEAPI_BINARIES)
-      info_cfg_option(WITH_CYCLES_DEVICE_HIP)
-      info_cfg_option(WITH_CYCLES_HIP_BINARIES)
-      info_cfg_option(WITH_CYCLES_DEVICE_HIPRT)
-    endif()
   endif()
 
   info_cfg_text("Tests:")

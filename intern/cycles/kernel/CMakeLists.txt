@@ -420,12 +420,7 @@ endif()
 # Backend-specific rules.
 
 add_subdirectory(device/cpu)
-add_subdirectory(device/cuda)
-add_subdirectory(device/hip)
-add_subdirectory(device/hiprt)
 add_subdirectory(device/metal)
-add_subdirectory(device/oneapi)
-add_subdirectory(device/optix)
 
 target_link_libraries(cycles_kernel
   INTERFACE cycles_kernel_cpu
@@ -444,10 +439,5 @@ if(NOT WITH_CYCLES_PARALLEL_DEVICE_KERNEL_BUILD)
     endif()
   endfunction()
 
-  cycles_add_gpu_kernel_dependencies(cycles_kernel_cuda)
-  cycles_add_gpu_kernel_dependencies(cycles_kernel_optix)
-  cycles_add_gpu_kernel_dependencies(cycles_kernel_hip)
-  cycles_add_gpu_kernel_dependencies(cycles_kernel_hiprt)
-  cycles_add_gpu_kernel_dependencies(cycles_kernel_oneapi)
   cycles_add_gpu_kernel_dependencies(cycles_kernel_cpu)
 endif()
