@@ -9,11 +9,7 @@
 #ifdef WITH_ALEMBIC
 
 /* needed for directory lookup */
-#  ifndef WIN32
-#    include <dirent.h>
-#  else
-#    include "BLI_winstuff.hh"
-#  endif
+#  include <dirent.h>
 
 #  include <cerrno>
 #  include <cstring>

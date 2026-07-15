@@ -7,10 +7,6 @@
 #ifndef OPENSUBDIV_TOPOLOGY_REFINER_IMPL_H_
 #define OPENSUBDIV_TOPOLOGY_REFINER_IMPL_H_
 
-#ifdef _MSC_VER
-#  include <iso646.h>
-#endif
-
 #include <opensubdiv/far/topologyRefiner.h>
 
 #include "internal/topology/mesh_topology.h"

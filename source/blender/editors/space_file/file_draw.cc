@@ -32,10 +32,6 @@
 #include "BLI_string_utf8.hh"
 #include "BLI_utildefines.hh"
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "BIF_glutil.hh"
 
 #include "BKE_blendfile.hh"

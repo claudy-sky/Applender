@@ -28,10 +28,6 @@
 
 #ifdef USE_WELD_DEBUG_TIME
 #  include "BLI_timeit.hh"
-
-#  if WIN32 and NDEBUG
-#    pragma optimize("t", on)
-#  endif
 #endif
 
 namespace blender::geometry {

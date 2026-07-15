@@ -767,11 +767,7 @@ void popup_block_template_confirm(Block *block,
                                   FunctionRef<Button *()> confirm_fn,
                                   FunctionRef<Button *()> cancel_fn)
 {
-#ifdef _WIN32
-  const bool windows_layout = true;
-#else
   const bool windows_layout = false;
-#endif
   FunctionRef<Button *()> *button_functions[2];
   if (windows_layout) {
     ARRAY_SET_ITEMS(button_functions, &confirm_fn, &cancel_fn);

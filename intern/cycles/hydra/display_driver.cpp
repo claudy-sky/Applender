@@ -3,14 +3,6 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-#ifdef _WIN32
-// Include first to avoid "NOGDI" definition set in Cycles headers
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  include <Windows.h>
-#endif
-
 #include "hydra/display_driver.h"
 #include "hydra/render_buffer.h"
 #include "hydra/session.h"
@@ -40,33 +32,6 @@ HdCyclesDisplayDriver::~HdCyclesDisplayDriver()
 
 void HdCyclesDisplayDriver::gl_context_create()
 {
-#ifdef _WIN32
-  if (!gl_context_) {
-    hdc_ = GetDC(CreateWindowA("STATIC",
-                               "HdCycles",
-                               WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-                               0,
-                               0,
-                               64,
-                               64,
-                               nullptr,
-                               nullptr,
-                               GetModuleHandle(nullptr),
-                               nullptr));
-
-    int pixelFormat = GetPixelFormat(wglGetCurrentDC());
-    PIXELFORMATDESCRIPTOR pfd = {sizeof(pfd)};
-    DescribePixelFormat((HDC)hdc_, pixelFormat, sizeof(pfd), &pfd);
-    SetPixelFormat((HDC)hdc_, pixelFormat, &pfd);
-
-    TF_VERIFY(gl_context_ = wglCreateContext((HDC)hdc_));
-    TF_VERIFY(wglShareLists(wglGetCurrentContext(), (HGLRC)gl_context_));
-  }
-  if (!gl_context_) {
-    return;
-  }
-#endif
-
   if (!gl_pbo_id_) {
     glGenBuffers(1, &gl_pbo_id_);
     graphics_interop_buffer_.clear();
@@ -75,47 +40,12 @@ void HdCyclesDisplayDriver::gl_context_create()
 
 bool HdCyclesDisplayDriver::gl_context_enable()
 {
-#ifdef _WIN32
-  if (!hdc_ || !gl_context_) {
-    return false;
-  }
-
-  mutex_.lock();
-
-  // Do not change context if this is called in the main thread
-  if (wglGetCurrentContext() == nullptr) {
-    if (!TF_VERIFY(wglMakeCurrent((HDC)hdc_, (HGLRC)gl_context_))) {
-      mutex_.unlock();
-      return false;
-    }
-  }
-
-  return true;
-#else
   return false;
-#endif
 }
 
-void HdCyclesDisplayDriver::gl_context_disable()
-{
-#ifdef _WIN32
-  if (wglGetCurrentContext() == gl_context_) {
-    TF_VERIFY(wglMakeCurrent(nullptr, nullptr));
-  }
+void HdCyclesDisplayDriver::gl_context_disable() {}
 
-  mutex_.unlock();
-#endif
-}
-
-void HdCyclesDisplayDriver::gl_context_dispose()
-{
-#ifdef _WIN32
-  if (gl_context_) {
-    TF_VERIFY(wglDeleteContext((HGLRC)gl_context_));
-    DestroyWindow(WindowFromDC((HDC)hdc_));
-  }
-#endif
-}
+void HdCyclesDisplayDriver::gl_context_dispose() {}
 
 void HdCyclesDisplayDriver::next_tile_begin() {}
 

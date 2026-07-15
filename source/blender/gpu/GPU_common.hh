@@ -12,8 +12,4 @@
 // #define GPU_NO_USE_PY_REFERENCES
 
 /* GPU_INLINE */
-#if defined(_MSC_VER)
-#  define GPU_INLINE static __forceinline
-#else
-#  define GPU_INLINE static inline __attribute__((always_inline)) __attribute__((__unused__))
-#endif
+#define GPU_INLINE static inline __attribute__((always_inline)) __attribute__((__unused__))

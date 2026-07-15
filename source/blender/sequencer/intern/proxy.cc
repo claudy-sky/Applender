@@ -18,11 +18,7 @@
 #include "BLI_path_utils.hh"
 #include "BLI_string.hh"
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#else
-#  include <unistd.h>
-#endif
+#include <unistd.h>
 
 #include "BKE_global.hh"
 #include "BKE_image.hh"

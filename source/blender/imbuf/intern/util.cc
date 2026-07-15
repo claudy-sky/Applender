@@ -6,17 +6,10 @@
  * \ingroup imbuf
  */
 
-#ifdef _WIN32
-#  include <io.h>
-#endif
-
 #include <cstdlib>
 
 #include "BLI_fileops.hh"
 #include "BLI_path_utils.hh"
-#ifdef _WIN32
-#  include "BLI_winstuff.hh"
-#endif
 
 #include "IMB_filetype.hh"
 #include "IMB_imbuf.hh"

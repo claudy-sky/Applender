@@ -14,10 +14,6 @@
 #  include <thread>
 #endif
 
-#ifdef _WIN32
-#  include "util/windows.h"
-#endif
-
 /* NOTE: Use tbb/spin_mutex.h instead of util_tbb.h because some of the TBB
  * functionality requires RTTI, which is disabled for OSL kernel. */
 #include <tbb/spin_mutex.h>

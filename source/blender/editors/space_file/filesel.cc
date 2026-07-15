@@ -12,15 +12,9 @@
 #include <sys/types.h>
 
 /* path/file handling stuff */
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#  include <direct.h>
-#  include <io.h>
-#else
-#  include <dirent.h>
-#  include <sys/times.h>
-#  include <unistd.h>
-#endif
+#include <dirent.h>
+#include <sys/times.h>
+#include <unistd.h>
 
 #include "AS_asset_representation.hh"
 

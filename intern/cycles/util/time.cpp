@@ -7,23 +7,13 @@
 #include <chrono>
 #include <cstdlib>
 
-#if !defined(_WIN32)
-#  include <sys/time.h>
-#  include <unistd.h>
-#endif
+#include <sys/time.h>
+#include <unistd.h>
 
 #include "util/string.h"
 
-#ifdef _WIN32
-#  include "util/windows.h"
-#endif
-
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#  ifdef _MSC_VER
-#    include <intrin.h>
-#  else
-#    include <x86intrin.h>
-#  endif
+#if defined(__x86_64__) || defined(__i386__)
+#  include <x86intrin.h>
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -34,12 +24,6 @@ double time_dt()
       .count();
 }
 
-#ifdef _WIN32
-void time_sleep(const double t)
-{
-  Sleep((int)(t * 1000));
-}
-#else
 /* sleep t seconds */
 void time_sleep(double t)
 {
@@ -59,74 +43,21 @@ void time_sleep(double t)
     usleep(us);
   }
 }
-#endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
 /* Use cntvct_el0/cntfrq_el0 registers on ARM64. */
 
 uint64_t time_fast_tick(uint32_t * /*last_cpu*/)
 {
-  /* MSVC does not define __aarch64__, or support inline ASM */
-#  if !defined(__aarch64__)
-  return _ReadStatusReg(ARM64_CNTVCT_EL0);
-#  else
   uint64_t counter;
   asm("mrs %x0, cntvct_el0" : "=r"(counter));
   return counter;
-#  endif
 }
 uint64_t time_fast_frequency()
 {
-  /* MSVC does not define __aarch64__, or support inline ASM */
-#  if !defined(__aarch64__)
-  return _ReadStatusReg(ARM64_CNTFRQ_EL0);
-#  else
   uint64_t freq;
   asm("mrs %x0, cntfrq_el0" : "=r"(freq));
   return freq;
-#  endif
 }
-#elif defined(__x86_64__) || defined(_M_X64)
-/* Use RDTSCP on x86-64. */
-
-uint64_t time_fast_tick(uint32_t *last_cpu)
-{
-  return __rdtscp(last_cpu);
-}
-uint64_t time_fast_frequency()
-{
-  static bool initialized = false;
-  static uint64_t frequency;
-
-  /* Unfortunately TSC does not provide a easily accessible frequency value, so roughly calibrate
-   * by sleeping a millisecond. Not ideal, but good enough for our purposes. */
-  if (!initialized) {
-    uint32_t cpu;
-    uint64_t start_tick = time_fast_tick(&cpu);
-    double start_precise = time_dt();
-    time_sleep(0.001);
-    uint64_t end_tick = time_fast_tick(&cpu);
-    double end_precise = time_dt();
-    frequency = uint64_t(double(end_tick - start_tick) / (end_precise - start_precise));
-    initialized = true;
-  }
-
-  return frequency;
-}
-#else
-/* Fall back to std::chrono::steady_clock. */
-
-uint64_t time_fast_tick(uint32_t * /*last_cpu*/)
-{
-  auto now = std::chrono::steady_clock::now();
-  auto nanoseconds = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
-  return nanoseconds.time_since_epoch().count();
-}
-uint64_t time_fast_frequency()
-{
-  return 1000000000;
-}
-#endif
 
 /* Time in format "hours:minutes:seconds.hundreds" */
 

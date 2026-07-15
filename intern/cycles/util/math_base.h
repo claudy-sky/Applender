@@ -91,20 +91,6 @@ CCL_NAMESPACE_BEGIN
 
 /* Scalar */
 
-#if !defined(__HIP__) && !defined(__KERNEL_ONEAPI__)
-#  ifdef _WIN32
-ccl_device_inline float fmaxf(const float a, const float b)
-{
-  return (a > b) ? a : b;
-}
-
-ccl_device_inline float fminf(const float a, const float b)
-{
-  return (a < b) ? a : b;
-}
-
-#  endif /* _WIN32 */
-#endif   /* __HIP__, __KERNEL_ONEAPI__ */
 
 #if !defined(__KERNEL_GPU__) || defined(__KERNEL_ONEAPI__)
 #  ifndef __KERNEL_ONEAPI__
@@ -744,13 +730,7 @@ ccl_device_inline uint count_leading_zeros(const uint x)
   return sycl::clz(x);
 #else
   assert(x != 0);
-#  ifdef _MSC_VER
-  unsigned long leading_zero = 0;
-  _BitScanReverse(&leading_zero, x);
-  return (31 - leading_zero);
-#  else
   return __builtin_clz(x);
-#  endif
 #endif
 }
 
@@ -764,13 +744,7 @@ ccl_device_inline uint count_trailing_zeros(const uint x)
   return sycl::ctz(x);
 #else
   assert(x != 0);
-#  ifdef _MSC_VER
-  unsigned long ctz = 0;
-  _BitScanForward(&ctz, x);
-  return ctz;
-#  else
   return __builtin_ctz(x);
-#  endif
 #endif
 }
 
@@ -781,11 +755,7 @@ ccl_device_inline uint find_first_set(const uint x)
 #elif defined(__KERNEL_METAL__)
   return (x != 0) ? ctz(x) + 1 : 0;
 #else
-#  ifdef _MSC_VER
-  return (x != 0) ? (32 - count_leading_zeros(x & (~x + 1))) : 0;
-#  else
   return __builtin_ffs(x);
-#  endif
 #endif
 }
 
@@ -836,7 +806,7 @@ ccl_device_inline uint32_t reverse_integer_bits(uint32_t x)
   return __brev(x);
 #elif defined(__KERNEL_METAL__)
   return reverse_bits(x);
-#elif defined(__aarch64__) || (defined(_M_ARM64) && !defined(_MSC_VER))
+#elif defined(__aarch64__)
   /* Assume the rbit is always available on 64bit ARM architecture. */
   __asm__("rbit %w0, %w1" : "=r"(x) : "r"(x));
   return x;
@@ -855,9 +825,7 @@ ccl_device_inline uint32_t reverse_integer_bits(uint32_t x)
   /* Flip nibbles. */
   x = ((x & 0x0F0F0F0F) << 4) | ((x & 0xF0F0F0F0) >> 4);
   /* Flip bytes. CPUs have an instruction for that, pretty fast one. */
-#  ifdef _MSC_VER
-  return _byteswap_ulong(x);
-#  elif defined(__INTEL_COMPILER)
+#  if defined(__INTEL_COMPILER)
   return (uint32_t)_bswap((int)x);
 #  else
   /* Assuming gcc or clang. */

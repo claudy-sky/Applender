@@ -148,11 +148,7 @@ void HdCyclesDelegate::SetDrivers(const HdDriverVector &drivers)
 
 bool HdCyclesDelegate::IsDisplaySupported() const
 {
-#if defined(_WIN32) && defined(WITH_HYDRA_DISPLAY_DRIVER)
-  return _hgi && _hgi->GetAPIName() == HgiTokens->OpenGL;
-#else
   return false;
-#endif
 }
 
 const TfTokenVector &HdCyclesDelegate::GetSupportedRprimTypes() const

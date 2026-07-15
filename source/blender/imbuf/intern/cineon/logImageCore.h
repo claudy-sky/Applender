@@ -22,11 +22,7 @@
 
 namespace blender {
 
-#ifdef _WIN32
-#  define PATHSEP_CHAR '\\'
-#else
-#  define PATHSEP_CHAR '/'
-#endif
+#define PATHSEP_CHAR '/'
 
 /*
  * Image structure

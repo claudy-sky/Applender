@@ -337,14 +337,7 @@ bool PDFExporter::write_to_file(StringRefNull filepath)
   HPDF_STATUS result = 0;
 
   /* TODO: It looks `libharu` does not support unicode. */
-#if 0 /* `ifdef WIN32` */
-  wchar_t *filepath_16 = alloc_utf16_from_8(filepath.c_str(), 0);
-  std::wstring wstr(filepath_16);
-  result = HPDF_SaveToFile(pdf_, wstr.c_str());
-  free(filepath_16);
-#else
   result = HPDF_SaveToFile(pdf_, filepath.c_str());
-#endif
 
   return (result == 0) ? true : false;
 }

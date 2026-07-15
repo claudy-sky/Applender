@@ -21,145 +21,21 @@
 
 #include <zstd.h>
 
-#if defined(_WIN32)
-#  define DIR_SEP '\\'
-#  define DIR_SEP_ALT '/'
-#  include <direct.h>
-#else
-#  define DIR_SEP '/'
-#  include <dirent.h>
-#  include <pwd.h>
-#  include <sys/types.h>
-#  include <unistd.h>
-#endif
-
-#ifdef HAVE_SHLWAPI_H
-#  include <shlwapi.h>
-#endif
-
-#ifdef _WIN32
-#  include "util/windows.h"
-#endif
+#define DIR_SEP '/'
+#include <dirent.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 CCL_NAMESPACE_BEGIN
 
-#ifdef _WIN32
-#  if defined(_MSC_VER) || defined(__MINGW64__)
-typedef struct _stat64 path_stat_t;
-#  elif defined(__MINGW32__)
-typedef struct _stati64 path_stat_t;
-#  else
-typedef struct _stat path_stat_t;
-#  endif
-#  ifndef S_ISDIR
-#    define S_ISDIR(x) (((x) & _S_IFDIR) == _S_IFDIR)
-#  endif
-#else
 using path_stat_t = struct stat;
-#endif
 
 static string cached_path;
 static string cached_user_path;
 static string cached_xdg_cache_path;
 
 namespace {
-
-#ifdef _WIN32
-class directory_iterator {
- public:
-  class path_info {
-   public:
-    path_info(const string &path, const WIN32_FIND_DATAW &find_data)
-        : path_(path), find_data_(find_data)
-    {
-    }
-
-    string path()
-    {
-      return path_join(path_, string_from_wstring(find_data_.cFileName));
-    }
-
-   protected:
-    const string &path_;
-    const WIN32_FIND_DATAW &find_data_;
-  };
-
-  directory_iterator() : path_info_("", find_data_), h_find_(INVALID_HANDLE_VALUE) {}
-
-  explicit directory_iterator(const string &path) : path_(path), path_info_(path, find_data_)
-  {
-    string wildcard = path;
-    if (wildcard[wildcard.size() - 1] != DIR_SEP) {
-      wildcard += DIR_SEP;
-    }
-    wildcard += "*";
-    h_find_ = FindFirstFileW(string_to_wstring(wildcard).c_str(), &find_data_);
-    if (h_find_ != INVALID_HANDLE_VALUE) {
-      skip_dots();
-    }
-  }
-
-  ~directory_iterator()
-  {
-    if (h_find_ != INVALID_HANDLE_VALUE) {
-      FindClose(h_find_);
-    }
-  }
-
-  directory_iterator &operator++()
-  {
-    step();
-    return *this;
-  }
-
-  path_info *operator->()
-  {
-    return &path_info_;
-  }
-
-  bool operator!=(const directory_iterator &other)
-  {
-    return h_find_ != other.h_find_;
-  }
-
- protected:
-  bool step()
-  {
-    if (do_step()) {
-      return skip_dots();
-    }
-    return false;
-  }
-
-  bool do_step()
-  {
-    if (h_find_ != INVALID_HANDLE_VALUE) {
-      bool result = FindNextFileW(h_find_, &find_data_) == TRUE;
-      if (!result) {
-        FindClose(h_find_);
-        h_find_ = INVALID_HANDLE_VALUE;
-      }
-      return result;
-    }
-    return false;
-  }
-
-  bool skip_dots()
-  {
-    while (wcscmp(find_data_.cFileName, L".") == 0 || wcscmp(find_data_.cFileName, L"..") == 0) {
-      if (!do_step()) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  string path_;
-  path_info path_info_;
-  WIN32_FIND_DATAW find_data_;
-  HANDLE h_find_;
-};
-#else /* _WIN32 */
 
 class directory_iterator {
  public:
@@ -267,18 +143,11 @@ class directory_iterator {
   int num_entries_, cur_entry_;
 };
 
-#endif /* _WIN32 */
-
 size_t find_last_slash(const string &path)
 {
   for (size_t i = 0; i < path.size(); ++i) {
     const size_t index = path.size() - 1 - i;
-#ifdef _WIN32
-    if (path[index] == DIR_SEP || path[index] == DIR_SEP_ALT)
-#else
-    if (path[index] == DIR_SEP)
-#endif
-    {
+    if (path[index] == DIR_SEP) {
       return index;
     }
   }
@@ -287,20 +156,12 @@ size_t find_last_slash(const string &path)
 
 std::filesystem::path std_filesystem_path_from_string(const string &p)
 {
-#ifdef _WIN32
-  return std::filesystem::path(string_to_wstring(p));
-#else
   return std::filesystem::path(p);
-#endif
 }
 
 string std_filesystem_path_to_string(const std::filesystem::path &p)
 {
-#ifdef _WIN32
-  return string_from_wstring(p.native());
-#else
   return p.string();
-#endif
 }
 
 } /* namespace */
@@ -325,7 +186,6 @@ static char *path_specials(const string &sub)
   return nullptr;
 }
 
-#if defined(__linux__) || defined(__APPLE__)
 static string path_xdg_cache_get()
 {
   const char *home = getenv("XDG_CACHE_HOME");
@@ -338,19 +198,11 @@ static string path_xdg_cache_get()
   }
   return path_join(string(home), ".cache");
 }
-#endif
 
 void path_init(const string &path, const string &user_path)
 {
   cached_path = path;
   cached_user_path = user_path;
-
-#ifdef _MSC_VER
-  // workaround for https://svn.boost.org/trac/boost/ticket/6320
-  // indirectly init boost codec here since it's not thread safe, and can
-  // cause crashes when it happens in multithreaded image load
-  OIIO::Filesystem::exists(path);
-#endif
 }
 
 string path_get(const string &sub)
@@ -378,38 +230,24 @@ string path_user_get(const string &sub)
 
 string path_cache_get(const string &sub)
 {
-#if defined(__linux__) || defined(__APPLE__)
   if (cached_xdg_cache_path.empty()) {
     cached_xdg_cache_path = path_xdg_cache_get();
   }
   const string result = path_join(cached_xdg_cache_path, "cycles");
   return path_join(result, sub);
-#else
-  /* TODO(sergey): What that should be on Windows? */
-  return path_user_get(path_join("cache", sub));
-#endif
 }
 
-#if defined(__linux__) || defined(__APPLE__)
 string path_xdg_home_get(const string &sub = "");
-#endif
 
 string path_filename(const string &path)
 {
   const size_t index = find_last_slash(path);
   if (index != string::npos) {
     /* Corner cases to match boost behavior. */
-#ifndef _WIN32
     if (index == 0 && path.size() == 1) {
       return path;
     }
-#endif
     if (index == path.size() - 1) {
-#ifdef _WIN32
-      if (index == 2) {
-        return string(1, DIR_SEP);
-      }
-#endif
       return ".";
     }
     return path.substr(index + 1, path.size() - index - 1);
@@ -421,11 +259,9 @@ string path_dirname(const string &path)
 {
   const size_t index = find_last_slash(path);
   if (index != string::npos) {
-#ifndef _WIN32
     if (index == 0 && path.size() > 1) {
       return string(1, DIR_SEP);
     }
-#endif
     return path.substr(0, index);
   }
   return "";
@@ -440,13 +276,7 @@ string path_join(const string &dir, const string &file)
     return dir;
   }
   string result = dir;
-#ifndef _WIN32
-  if (result[result.size() - 1] != DIR_SEP && file[0] != DIR_SEP)
-#else
-  if (result[result.size() - 1] != DIR_SEP && result[result.size() - 1] != DIR_SEP_ALT &&
-      file[0] != DIR_SEP && file[0] != DIR_SEP_ALT)
-#endif
-  {
+  if (result[result.size() - 1] != DIR_SEP && file[0] != DIR_SEP) {
     result += DIR_SEP;
   }
   result += file;
@@ -464,9 +294,6 @@ string path_normalize(const string &path)
 {
   std::string normpath = std_filesystem_path_to_string(
       std_filesystem_path_from_string(path).lexically_normal().make_preferred());
-#ifdef _WIN32
-  string_replace(normpath, "\\", "/");
-#endif
   return normpath;
 }
 
@@ -499,95 +326,10 @@ string path_make_relative(const string &path_, const string &base_)
   return std_filesystem_path_to_string(path.lexically_relative(base));
 }
 
-#ifdef _WIN32
-/* Add a slash if the UNC path points to a share. */
-static string path_unc_add_slash_to_share(const string &path)
-{
-  size_t slash_after_server = path.find(DIR_SEP, 2);
-  if (slash_after_server != string::npos) {
-    size_t slash_after_share = path.find(DIR_SEP, slash_after_server + 1);
-    if (slash_after_share == string::npos) {
-      return path + DIR_SEP;
-    }
-  }
-  return path;
-}
-
-/* Convert:
- *    \\?\UNC\server\share\folder\... to \\server\share\folder\...
- *    \\?\C:\ to C:\ and \\?\C:\folder\... to C:\folder\...
- */
-static string path_unc_to_short(const string &path)
-{
-  size_t len = path.size();
-  if ((len > 3) && (path[0] == DIR_SEP) && (path[1] == DIR_SEP) && (path[2] == '?') &&
-      ((path[3] == DIR_SEP) || (path[3] == DIR_SEP_ALT)))
-  {
-    if ((len > 5) && (path[5] == ':')) {
-      return path.substr(4, len - 4);
-    }
-    else if ((len > 7) && (path.substr(4, 3) == "UNC") &&
-             ((path[7] == DIR_SEP) || (path[7] == DIR_SEP_ALT)))
-    {
-      return "\\\\" + path.substr(8, len - 8);
-    }
-  }
-  return path;
-}
-
-static string path_cleanup_unc(const string &path)
-{
-  string result = path_unc_to_short(path);
-  if (path.size() > 2) {
-    /* It's possible path is now a non-UNC. */
-    if (result[0] == DIR_SEP && result[1] == DIR_SEP) {
-      return path_unc_add_slash_to_share(result);
-    }
-  }
-  return result;
-}
-
-/* Make path compatible for stat() functions. */
-static string path_make_compatible(const string &path)
-{
-  string result = path;
-  /* In Windows stat() doesn't recognize dir ending on a slash. */
-  if (result.size() > 3 && result[result.size() - 1] == DIR_SEP) {
-    result.resize(result.size() - 1);
-  }
-  /* Clean up UNC path. */
-  if ((path.size() >= 3) && (path[0] == DIR_SEP) && (path[1] == DIR_SEP)) {
-    result = path_cleanup_unc(result);
-  }
-  /* Make sure volume-only path ends up wit a directory separator. */
-  if (result.size() == 2 && result[1] == ':') {
-    result += DIR_SEP;
-  }
-  return result;
-}
-
-static int path_wstat(const wstring &path_wc, path_stat_t *st)
-{
-#  if defined(_MSC_VER) || defined(__MINGW64__)
-  return _wstat64(path_wc.c_str(), st);
-#  elif defined(__MINGW32__)
-  return _wstati64(path_wc.c_str(), st);
-#  else
-  return _wstat(path_wc.c_str(), st);
-#  endif
-}
-
-static int path_stat(const string &path, path_stat_t *st)
-{
-  wstring path_wc = string_to_wstring(path);
-  return path_wstat(path_wc, st);
-}
-#else  /* _WIN32 */
 static int path_stat(const string &path, path_stat_t *st)
 {
   return stat(path.c_str(), st);
 }
-#endif /* _WIN32 */
 
 size_t path_file_size(const string &path)
 {
@@ -600,21 +342,11 @@ size_t path_file_size(const string &path)
 
 bool path_exists(const string &path)
 {
-#ifdef _WIN32
-  string fixed_path = path_make_compatible(path);
-  wstring path_wc = string_to_wstring(fixed_path);
-  path_stat_t st;
-  if (path_wstat(path_wc, &st) != 0) {
-    return false;
-  }
-  return st.st_mode != 0;
-#else  /* _WIN32 */
   struct stat st;
   if (stat(path.c_str(), &st) != 0) {
     return false;
   }
   return st.st_mode != 0;
-#endif /* _WIN32 */
 }
 
 bool path_is_directory(const string &path)
@@ -679,12 +411,7 @@ static bool create_directories_recursivey(const string &path)
     }
   }
 
-#ifdef _WIN32
-  wstring path_wc = string_to_wstring(path);
-  _wmkdir(path_wc.c_str());
-#else
   mkdir(path.c_str(), 0777);
-#endif
 
   /* If another thread creates this in the meantime mkdir will return an error,
    * so instead check if the directory exists. */
@@ -1021,13 +748,7 @@ string path_source_replace_includes(const string &source, const string &path)
 
 FILE *path_fopen(const string &path, const string &mode)
 {
-#ifdef _WIN32
-  wstring path_wc = string_to_wstring(path);
-  wstring mode_wc = string_to_wstring(mode);
-  return _wfopen(path_wc.c_str(), mode_wc.c_str());
-#else
   return fopen(path.c_str(), mode.c_str());
-#endif
 }
 
 /* LRU Cache for Kernels */

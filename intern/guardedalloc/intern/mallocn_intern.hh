@@ -9,9 +9,6 @@
 
 #ifdef __GNUC__
 #  define UNUSED(x) UNUSED_##x __attribute__((__unused__))
-#elif defined(_MSC_VER)
-/* NOTE: This suppresses the warning for the line, not the attribute. */
-#  define UNUSED(x) UNUSED_##x __pragma(warning(suppress : 4100))
 #else
 #  define UNUSED(x) UNUSED_##x
 #endif
@@ -29,9 +26,6 @@
 #elif defined(__APPLE__)
 #  include <malloc/malloc.h>
 #  define malloc_usable_size malloc_size
-#elif defined(WIN32)
-#  include <malloc.h>
-#  define malloc_usable_size _msize
 #elif defined(__HAIKU__)
 #  include <malloc.h>
 size_t malloc_usable_size(void *ptr);
@@ -55,21 +49,10 @@ size_t malloc_usable_size(void *ptr);
 #  define UNLIKELY(x) (x)
 #endif
 
-#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
-/* Needed for `memalign` on Linux and `_aligned_alloc` on Windows. */
+/* Apple's malloc is 16-byte aligned, and does not have `malloc.h`, so include `stdlib` instead. */
+#include <stdlib.h>
 
-#  include <malloc.h>
-#else
-/* Apple's malloc is 16-byte aligned, and does not have `malloc.h`, so include `stdilb` instead. */
-#  include <stdlib.h>
-#endif
-
-/* visual studio 2012 does not define inline for C */
-#ifdef _MSC_VER
-#  define MEM_INLINE static __inline
-#else
-#  define MEM_INLINE static inline
-#endif
+#define MEM_INLINE static inline
 
 #define IS_POW2(a) (((a) & ((a) - 1)) == 0)
 

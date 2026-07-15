@@ -9,25 +9,12 @@
 #include <algorithm>
 #include <cstring>
 
-#ifdef _WIN32
-#  include <cstdio>
-#  if (!defined(FREE_WINDOWS))
-#    include <intrin.h>
-#  endif
-#  include "util/windows.h"
-#elif defined(__APPLE__)
-#  include <cstdint>
-#  include <sys/ioctl.h>
-#  include <sys/resource.h>
-#  include <sys/sysctl.h>
-#  include <sys/types.h>
-#  include <unistd.h>
-#else
-#  include <cstdint>
-#  include <sys/ioctl.h>
-#  include <sys/resource.h>
-#  include <unistd.h>
-#endif
+#include <cstdint>
+#include <sys/ioctl.h>
+#include <sys/resource.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 CCL_NAMESPACE_BEGIN
 
@@ -35,23 +22,16 @@ int system_console_width()
 {
   int columns = 0;
 
-#ifdef _WIN32
-  CONSOLE_SCREEN_BUFFER_INFO csbi;
-  if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
-    columns = csbi.dwSize.X;
-  }
-#else
   struct winsize w;
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0) {
     columns = w.ws_col;
   }
-#endif
 
   return (columns > 0) ? columns : 80;
 }
 
 /* Equivalent of Windows __cpuid for x86 processors on other platforms. */
-#if (!defined(_WIN32) || defined(FREE_WINDOWS)) && (defined(__x86_64__) || defined(__i386__))
+#if defined(__x86_64__) || defined(__i386__)
 static void __cpuid(int data[4], int selector)
 {
 #  if defined(__x86_64__)
@@ -72,68 +52,12 @@ static void __cpuid(int data[4], int selector)
 
 string system_cpu_brand_string()
 {
-#if defined(__APPLE__)
   /* Get from system on macOS. */
   char modelname[512] = "";
   size_t bufferlen = 512;
   if (sysctlbyname("machdep.cpu.brand_string", &modelname, &bufferlen, nullptr, 0) == 0) {
     return modelname;
   }
-#elif (defined(WIN32) || defined(__x86_64__) || defined(__i386__)) && !defined(_M_ARM64)
-  /* Get from intrinsics on Windows and x86. */
-  char buf[49] = {0};
-  int result[4] = {0};
-
-  __cpuid(result, 0x80000000);
-
-  if (result[0] != 0 && result[0] >= (int)0x80000004) {
-    __cpuid((int *)(buf + 0), 0x80000002);
-    __cpuid((int *)(buf + 16), 0x80000003);
-    __cpuid((int *)(buf + 32), 0x80000004);
-
-    string brand = buf;
-
-    /* Make it a bit more presentable. */
-    brand = string_remove_trademark(brand);
-    brand = string_remove_gpu_from_cpu_name(brand);
-
-    return brand;
-  }
-#elif defined(_M_ARM64)
-  DWORD processorNameStringLength = 255;
-  char processorNameString[255];
-  if (RegGetValueA(HKEY_LOCAL_MACHINE,
-                   "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                   "ProcessorNameString",
-                   RRF_RT_REG_SZ,
-                   nullptr,
-                   &processorNameString,
-                   &processorNameStringLength) == ERROR_SUCCESS)
-  {
-    return processorNameString;
-  }
-#else
-  /* Get from /proc/cpuinfo on Unix systems. */
-  FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
-  if (cpuinfo != nullptr) {
-    char cpuinfo_buf[513] = "";
-    fread(cpuinfo_buf, sizeof(cpuinfo_buf) - 1, 1, cpuinfo);
-    fclose(cpuinfo);
-
-    char *modelname = strstr(cpuinfo_buf, "model name");
-    if (modelname != nullptr) {
-      modelname = strchr(modelname, ':');
-      if (modelname != nullptr) {
-        modelname += 2;
-        char *modelname_end = strchr(modelname, '\n');
-        if (modelname_end != nullptr) {
-          *modelname_end = '\0';
-          return modelname;
-        }
-      }
-    }
-  }
-#endif
   return "Unknown CPU";
 }
 
@@ -245,42 +169,23 @@ bool system_cpu_support_avx2()
 
 size_t system_physical_ram()
 {
-#ifdef _WIN32
-  MEMORYSTATUSEX ram;
-  ram.dwLength = sizeof(ram);
-  GlobalMemoryStatusEx(&ram);
-  return ram.ullTotalPhys;
-#elif defined(__APPLE__)
   uint64_t ram = 0;
   size_t len = sizeof(ram);
   if (sysctlbyname("hw.memsize", &ram, &len, nullptr, 0) == 0) {
     return ram;
   }
   return 0;
-#else
-  size_t ps = sysconf(_SC_PAGESIZE);
-  size_t pn = sysconf(_SC_PHYS_PAGES);
-  return ps * pn;
-#endif
 }
 
 uint64_t system_self_process_id()
 {
-#ifdef _WIN32
-  return GetCurrentProcessId();
-#else
   return getpid();
-#endif
 }
 
 size_t system_max_open_files()
 {
-#if defined(_WIN32)
-  return _getmaxstdio();
-#else
   struct rlimit limit = {};
   return (getrlimit(RLIMIT_NOFILE, &limit) == 0) ? limit.rlim_cur : SIZE_MAX;
-#endif
 }
 
 void system_max_open_files_ensure()
@@ -289,18 +194,12 @@ void system_max_open_files_ensure()
   constexpr int max_open_files = 8192;
   bool ok = true;
 
-#if defined(_WIN32)
-  if (_getmaxstdio() < max_open_files) {
-    ok = _setmaxstdio(max_open_files) == max_open_files;
-  }
-#else
   struct rlimit limit = {};
   ok = getrlimit(RLIMIT_NOFILE, &limit) == 0;
   if (ok && limit.rlim_cur < rlim_t(max_open_files)) {
     limit.rlim_cur = std::min(rlim_t(max_open_files), limit.rlim_max);
     ok = setrlimit(RLIMIT_NOFILE, &limit) == 0;
   }
-#endif
 
   if (!ok) {
     LOG_DEBUG << "Failed to ensure max open files is at least " << max_open_files << ": "

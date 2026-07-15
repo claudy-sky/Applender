@@ -19,13 +19,6 @@
 #include <Alembic/AbcCoreOgawa/ReadWrite.h>
 #include <Alembic/AbcGeom/ArchiveBounds.h>
 
-#ifdef WIN32
-#  include "BLI_path_utils.hh"
-#  include "BLI_string.hh"
-
-#  include "utfconv.hh"
-#endif
-
 namespace blender::io::alembic {
 
 using Alembic::Abc::ErrorHandler;
@@ -54,11 +47,7 @@ static MetaData create_abc_metadata(const Main *bmain, double scene_fps)
   time(&raw_time);
   char buffer[128];
 
-#if defined _WIN32 || defined _WIN64
-  ctime_s(buffer, 128, &raw_time);
-#else
   ctime_r(&raw_time, buffer);
-#endif
 
   const std::size_t buffer_len = strlen(buffer);
   if (buffer_len > 0 && buffer[buffer_len - 1] == '\n') {
@@ -74,17 +63,7 @@ static OArchive *create_archive(std::ofstream *abc_ostream,
                                 MetaData &abc_metadata)
 {
   /* Use stream to support unicode character paths on Windows. */
-#ifdef WIN32
-  char filepath_cstr[FILE_MAX];
-  BLI_strncpy(filepath_cstr, filepath.c_str(), FILE_MAX);
-
-  UTF16_ENCODE(filepath_cstr);
-  std::wstring wstr(filepath_cstr_16);
-  abc_ostream->open(wstr.c_str(), std::ios::out | std::ios::binary);
-  UTF16_UN_ENCODE(filepath_cstr);
-#else
   abc_ostream->open(filepath, std::ios::out | std::ios::binary);
-#endif
 
   ErrorHandler::Policy policy = ErrorHandler::kThrowPolicy;
 

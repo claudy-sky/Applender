@@ -145,12 +145,7 @@ static void file_panel_execution_buttons_draw(const bContext *C, Panel *panel)
   PointerRNA *but_extra_rna_ptr;
 
   const bool overwrite_alert = file_draw_check_exists(sfile);
-  const bool windows_layout =
-#ifdef _WIN32
-      true;
-#else
-      false;
-#endif
+  const bool windows_layout = false;
 
   PointerRNA params_rna_ptr = RNA_pointer_create_discrete(
       &screen->id, RNA_FileSelectParams, params);

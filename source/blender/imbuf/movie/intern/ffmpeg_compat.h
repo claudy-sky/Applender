@@ -33,12 +33,7 @@
 #endif
 /* end sanity check */
 
-/* visual studio 2012 does not define inline for C */
-#ifdef _MSC_VER
-#  define FFMPEG_INLINE static __inline
-#else
-#  define FFMPEG_INLINE static inline
-#endif
+#define FFMPEG_INLINE static inline
 
 #if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(58, 29, 100)
 /* In FFMPEG 6.1 usage of the "key_frame" variable from "AVFrame" has been deprecated.

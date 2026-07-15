@@ -11,16 +11,12 @@
 #include <cstdlib>
 #include <sys/types.h>
 
-#ifndef WIN32
-#  include <unistd.h>
-#endif
+#include <unistd.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#ifndef WIN32
-#  include <sys/mman.h>
-#  define O_BINARY 0
-#endif
+#include <sys/mman.h>
+#define O_BINARY 0
 
 #define IMB_DPI_DEFAULT 72.0

@@ -50,10 +50,6 @@ class HdCyclesDisplayDriver final : public CCL_NS::DisplayDriver {
   HdCyclesSession *const _renderParam;
   Hgi *const _hgi;
 
-#ifdef _WIN32
-  void *hdc_ = nullptr;
-  void *gl_context_ = nullptr;
-#endif
   CCL_NS::thread_mutex mutex_;
 
   PXR_NS::HgiTextureHandle texture_;

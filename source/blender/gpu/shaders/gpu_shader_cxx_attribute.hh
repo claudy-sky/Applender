@@ -14,10 +14,6 @@
 
 #pragma once
 
-#if !defined(_MSC_VER) || defined(__clang__)
-/* MSVC doesn't support using the same attribute multiple times (fixed in later versions).
- * However, Clang in MSVC compatibility mode does. */
-
 /* Specify a function is a compute shader entry point. */
 #  define compute maybe_unused
 /* Specify a function is a vertex shader entry point. */
@@ -142,14 +138,3 @@
  * IMPORTANT: Will discard any iteration above N.
  */
 #  define unroll_n(N) likely
-#else
-/* This path checks for unused variables. Disable warning about unknown attributes. */
-#  if defined(__GNUC__) || defined(__clang__)
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wattributes"
-#  elif defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 5030)
-#    pragma warning(disable : 5222)
-#  endif
-#endif

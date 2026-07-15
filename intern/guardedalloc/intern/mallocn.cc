@@ -79,9 +79,6 @@ void *aligned_malloc(size_t size, size_t alignment)
   /* #posix_memalign requires alignment to be a multiple of `sizeof(void *)`. */
   assert(alignment >= ALIGNED_MALLOC_MINIMUM_ALIGNMENT);
 
-#ifdef _WIN32
-  return _aligned_malloc(size, alignment);
-#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
   void *result;
 
   if (posix_memalign(&result, alignment, size)) {
@@ -91,19 +88,12 @@ void *aligned_malloc(size_t size, size_t alignment)
     return NULL;
   }
   return result;
-#else /* This is for Linux. */
-  return memalign(alignment, size);
-#endif
 }
 
 void aligned_free(void *ptr)
 {
   PRF_memory_free(ptr);
-#ifdef _WIN32
-  _aligned_free(ptr);
-#else
   free(ptr);
-#endif
 }
 
 void MEM_delete_void(void *vmemh)

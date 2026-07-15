@@ -51,19 +51,9 @@ set(SRC
   fsmenu.hh
 )
 
-if(WIN32)
-  list(APPEND SRC
-    fsmenu_system_win32.cc
-  )
-elseif(APPLE)
-  list(APPEND SRC
-    fsmenu_system_macos.mm
-  )
-else() # Generic UNIX
-  list(APPEND SRC
-    fsmenu_system_unix.cc
-  )
-endif()
+list(APPEND SRC
+  fsmenu_system_macos.mm
+)
 
 set(LIB
   PRIVATE bf::asset_system

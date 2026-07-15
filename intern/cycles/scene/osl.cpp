@@ -240,11 +240,7 @@ void OSLManager::device_update_post(Device *device,
      * about it in the gcc: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=119151
      *
      * Note that it is the runtime libgcc version that matters, as it is linked dynamically. */
-#  if defined(_WIN32) || defined(__APPLE__)
       ss->optimize_all_groups();
-#  else
-      ss->optimize_all_groups(1);
-#  endif
     });
 
     OSLRenderServices::image_manager = nullptr;
@@ -313,19 +309,7 @@ void OSLManager::shading_system_init(const string &colorspace_interop_id)
 
     if (!ss_shared[device_type]) {
       OSLRenderServices *services = util_aligned_new<OSLRenderServices>(device_type);
-#  ifdef _WIN32
-      /* Annoying thing, Cycles stores paths in UTF8 code-page, so it can
-       * operate with file paths with any character. This requires to use wide
-       * char functions, but OSL uses old fashioned ANSI functions which means:
-       *
-       * - We have to convert our paths to ANSI before passing to OSL
-       * - OSL can't be used when there's a multi-byte character in the path
-       *   to the shaders folder.
-       */
-      const string shader_path = string_to_ansi(path_get("shader"));
-#  else
       const string shader_path = path_get("shader");
-#  endif
 
       /* Dummy texture system pointer so OSL doesn't create its own. Such an opaque texture system
        * pointer is supported and normally would be done with the OSL_NO_DEFAULT_TEXTURESYSTEM

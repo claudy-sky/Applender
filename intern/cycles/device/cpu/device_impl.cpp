@@ -10,10 +10,6 @@
 
 /* So ImathMath is included before our kernel_cpu_compat. */
 #ifdef WITH_OSL
-/* So no context pollution happens from indirectly included windows.h */
-#  ifdef _WIN32
-#    include "util/windows.h"
-#  endif
 #  include <OSL/oslexec.h>
 #endif
 

@@ -4,11 +4,7 @@
 
 #include "session/display_driver.h"
 
-#ifdef _WIN32
-#  include "util/windows.h"
-#else
-#  include <unistd.h>
-#endif
+#include <unistd.h>
 
 CCL_NAMESPACE_BEGIN
 
@@ -40,11 +36,7 @@ void GraphicsInteropBuffer::zero()
 void GraphicsInteropBuffer::clear()
 {
   if (type_ == GraphicsInteropDevice::VULKAN && handle_ && own_handle_) {
-#ifdef _WIN32
-    CloseHandle(HANDLE(handle_));
-#else
     close(handle_);
-#endif
   }
 
   type_ = GraphicsInteropDevice::NONE;

@@ -436,7 +436,7 @@ ccl_device_inline float fast_expf(const float x)
   return fast_exp2f(x / M_LN2_F);
 }
 
-#if !defined(__KERNEL_GPU__) && !defined(_MSC_VER)
+#if !defined(__KERNEL_GPU__)
 /* MSVC seems to have a code-gen bug here in at least SSE41/AVX, see
  * #78047 and #78869 for details. Just disable for now, it only makes
  * a small difference in denoising performance. */

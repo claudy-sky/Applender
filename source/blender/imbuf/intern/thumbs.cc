@@ -41,33 +41,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#ifdef WIN32
-/* Need to include windows.h so _WIN32_IE is defined. */
-#  include <windows.h>
-#  ifndef _WIN32_IE
-/* Minimal requirements for SHGetSpecialFolderPath on MINGW MSVC has this defined already. */
-#    define _WIN32_IE 0x0400
-#  endif
-/* For SHGetSpecialFolderPath, has to be done before BLI_winstuff
- * because 'near' is disabled through BLI_windstuff */
-#  include "BLI_winstuff.hh"
-#  include "utfconv.hh"
-#  include <direct.h> /* #chdir */
-#  include <shlobj.h>
-#endif
-
-#if defined(WIN32) || defined(__APPLE__)
-/* pass */
-#else
-#  define USE_FREEDESKTOP
-#endif
-
 /* '$HOME/.cache/thumbnails' or '$HOME/.thumbnails' */
-#ifdef USE_FREEDESKTOP
-#  define THUMBNAILS "thumbnails"
-#else
-#  define THUMBNAILS ".thumbnails"
-#endif
+#define THUMBNAILS ".thumbnails"
 
 #define URI_MAX (FILE_MAX * 3 + 8)
 
@@ -77,30 +52,12 @@ static bool get_thumb_dir(char *dir, ThumbSize size)
 {
   char *s = dir;
   const char *subdir;
-#ifdef WIN32
-  wchar_t dir_16[MAX_PATH];
-  /* Yes, applications shouldn't store data there, but so does GIMP :). */
-  SHGetSpecialFolderPathW(0, dir_16, CSIDL_PROFILE, 0);
-  conv_utf_16_to_8(dir_16, dir, FILE_MAX);
-  s += strlen(dir);
-#else
-#  if defined(USE_FREEDESKTOP)
-  const char *home_cache = BLI_getenv("XDG_CACHE_HOME");
-  const char *home = home_cache ? home_cache : BLI_dir_home();
-#  else
   const char *home = BLI_dir_home();
-#  endif
   if (!home) {
     return false;
   }
   s += BLI_strncpy_rlen(s, home, FILE_MAX);
 
-#  ifdef USE_FREEDESKTOP
-  if (!home_cache) {
-    s += BLI_strncpy_rlen(s, "/.cache", FILE_MAX - (s - dir));
-  }
-#  endif
-#endif
   switch (size) {
     case THB_NORMAL:
       subdir = SEP_STR THUMBNAILS SEP_STR "normal" SEP_STR;
@@ -221,34 +178,7 @@ static bool uri_from_filepath(const char *path, char *uri)
 {
   char orig_uri[URI_MAX];
 
-#ifdef WIN32
-  bool path_is_unc = BLI_path_is_unc(path);
-  char path_unc_normalized[FILE_MAX];
-  if (path_is_unc) {
-    STRNCPY(path_unc_normalized, path);
-    BLI_path_normalize_unc(path_unc_normalized, sizeof(path_unc_normalized));
-    path = path_unc_normalized;
-    /* Assign again because a normalized UNC path may resolve to a drive letter. */
-    path_is_unc = BLI_path_is_unc(path);
-  }
-
-  if (path_is_unc) {
-    /* Skip over the `\\` prefix, it's not needed for a URI. */
-    SNPRINTF(orig_uri, "file://%s", BLI_path_slash_skip(path));
-  }
-  else if (BLI_path_is_win32_drive(path)) {
-    SNPRINTF(orig_uri, "file:///%s", path);
-    /* Always use an uppercase drive/volume letter in the URI. */
-    orig_uri[8] = char(toupper(orig_uri[8]));
-  }
-  else {
-    /* Not a correct absolute path with a drive letter or UNC prefix. */
-    return false;
-  }
-  BLI_string_replace_char(orig_uri, '\\', '/');
-#else
   SNPRINTF(orig_uri, "file://%s", path);
-#endif
 
   escape_uri_string(orig_uri, uri, URI_MAX, UNSAFE_PATH);
 
@@ -476,9 +406,7 @@ static ImBuf *thumb_create_ex(const char *file_path,
     IMB_free_float_pixels(img);
 
     if (IMB_save_image(img, temp, ImBufFlags::ByteData | ImBufFlags::Metadata)) {
-#ifndef WIN32
       chmod(temp, S_IRUSR | S_IWUSR);
-#endif
       // printf("%s saving thumb: '%s'\n", __func__, tpath);
 
       BLI_rename_overwrite(temp, tpath);

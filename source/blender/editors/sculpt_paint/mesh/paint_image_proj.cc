@@ -16,10 +16,6 @@
 #include "IMB_imbuf_types.hh"
 #include "MEM_guardedalloc.h"
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "BLI_linklist.hh"
 #include "BLI_listbase.hh"
 #include "BLI_math_base_safe.hh"

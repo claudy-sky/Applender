@@ -8,9 +8,6 @@
 #include "util/time.h"
 
 #include <cstdio>
-#ifdef _MSC_VER
-#  define snprintf _snprintf
-#endif
 
 CCL_NAMESPACE_BEGIN
 

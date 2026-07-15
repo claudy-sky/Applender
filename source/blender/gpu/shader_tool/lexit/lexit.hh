@@ -31,11 +31,7 @@
 #  include <vector>
 #endif
 
-#if defined(_MSC_VER)
-#  define INLINE_METHOD __forceinline
-#else
-#  define INLINE_METHOD inline __attribute__((always_inline))
-#endif
+#define INLINE_METHOD inline __attribute__((always_inline))
 
 namespace lexit {
 

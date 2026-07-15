@@ -17,11 +17,6 @@
 
 #include "transform_snap_object.hh"
 
-#ifdef DEBUG_SNAP_TIME
-#  if WIN32 and NDEBUG
-#    pragma optimize("t", on)
-#  endif
-#endif
 
 namespace blender::ed::transform {
 

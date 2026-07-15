@@ -29,32 +29,7 @@ if(WITH_BUILDINFO)
   )
 endif()
 
-if(WIN32)
-  # -----------------------------------------------------------------------------
-  # Build `BlendThumb.dll`
-
-  set(SRC_WIN32
-    src/blendthumb_win32.cc
-    src/blendthumb_win32.def
-    src/blendthumb_win32.rc
-    src/blendthumb_win32_dll.cc
-  )
-
-  add_library(BlendThumb SHARED ${SRC} ${SRC_WIN32})
-
-  setup_platform_linker_flags(BlendThumb)
-  setup_platform_linker_libs(BlendThumb)
-
-  target_link_libraries(BlendThumb PRIVATE bf_blenlib bf_blenloader_core dbghelp.lib Version.lib Comctl32.lib)
-  # `blenlib` drags in a whole bunch of dependencies on shared libraries, none of which are used
-  # by `blenthumb`, but will cause load issues since the debug linker will not eliminate them.
-  # Link with /OPT:ref to force elimination of those unused dependencies this is already
-  # enabled by default on the release mode flags.
-  set_target_properties(BlendThumb PROPERTIES LINK_FLAGS "/OPT:ref")
-  set_target_properties(BlendThumb PROPERTIES LINK_FLAGS_DEBUG "/NODEFAULTLIB:msvcrt")
-  set_target_properties(BlendThumb PROPERTIES VS_GLOBAL_VcpkgEnabled "false")
-
-elseif(APPLE)
+if(APPLE)
   # -----------------------------------------------------------------------------
   # Build `blender-thumbnailer.appex` app extension.
   set(SRC_APPEX
@@ -89,17 +64,4 @@ elseif(APPLE)
       --entitlements "${CMAKE_SOURCE_DIR}/release/darwin/thumbnailer_entitlements.plist"
       --timestamp=none $<TARGET_BUNDLE_DIR:blender-thumbnailer>
   )
-elseif(UNIX)
-  # -----------------------------------------------------------------------------
-  # Build `blender-thumbnailer` executable
-
-  set(SRC_CMD
-    src/blender_thumbnailer.cc
-  )
-
-  add_executable(blender-thumbnailer ${SRC} ${SRC_CMD})
-  setup_platform_linker_flags(blender-thumbnailer)
-  setup_platform_linker_libs(blender-thumbnailer)
-  target_link_libraries(blender-thumbnailer PRIVATE bf_blenlib bf_blenloader_core)
-  target_link_libraries(blender-thumbnailer PRIVATE bf::dependencies::pthreads)
 endif()

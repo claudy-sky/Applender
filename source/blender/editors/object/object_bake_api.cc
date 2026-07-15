@@ -405,9 +405,7 @@ static bool write_external_bake_pixels(const char *filepath,
   }
 
   if ((ok = BKE_imbuf_write(ibuf, filepath, im_format))) {
-#ifndef WIN32
     chmod(filepath, S_IRUSR | S_IWUSR);
-#endif
     // printf("%s saving bake map: '%s'\n", __func__, filepath);
   }
 
