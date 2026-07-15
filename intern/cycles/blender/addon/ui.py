@@ -117,22 +117,6 @@ def use_metal(context):
     return (get_device_type(context) == 'METAL' and use_gpu(context))
 
 
-def use_cuda(context):
-    return (get_device_type(context) == 'CUDA' and use_gpu(context))
-
-
-def use_hip(context):
-    return (get_device_type(context) == 'HIP' and use_gpu(context))
-
-
-def use_optix(context):
-    return (get_device_type(context) == 'OPTIX' and use_gpu(context))
-
-
-def use_oneapi(context):
-    return (get_device_type(context) == 'ONEAPI' and use_gpu(context))
-
-
 def use_multi_device(context):
     if use_gpu(context):
         return context.preferences.addons[__package__].preferences.has_multi_device()
@@ -151,9 +135,6 @@ def show_preview_denoise_active(context):
     if not cscene.use_preview_denoising:
         return False
 
-    if cscene.preview_denoiser == 'OPTIX':
-        return has_optixdenoiser_gpu_devices(context)
-
     # OIDN is always available, thanks to CPU support
     return True
 
@@ -162,9 +143,6 @@ def show_denoise_active(context):
     cscene = context.scene.cycles
     if not cscene.use_denoising:
         return False
-
-    if cscene.denoiser == 'OPTIX':
-        return has_optixdenoiser_gpu_devices(context)
 
     # OIDN is always available, thanks to CPU support
     return True
@@ -177,21 +155,11 @@ def get_effective_preview_denoiser(context, has_oidn_gpu):
     if cscene.preview_denoiser != "AUTO":
         return cscene.preview_denoiser
 
-    if has_oidn_gpu:
-        return 'OPENIMAGEDENOISE'
-
-    if has_optixdenoiser_gpu_devices(context):
-        return 'OPTIX'
-
     return 'OPENIMAGEDENOISE'
 
 
 def has_oidn_gpu_devices(context):
     return context.preferences.addons[__package__].preferences.has_oidn_gpu_devices()
-
-
-def has_optixdenoiser_gpu_devices(context):
-    return context.preferences.addons[__package__].preferences.has_optixdenoiser_gpu_devices()
 
 
 def use_mnee(context):
@@ -928,7 +896,7 @@ class CYCLES_RENDER_PT_performance_acceleration_structure(CyclesButtonsPanel, Pa
 
     @classmethod
     def poll(cls, context):
-        return not use_optix(context) or use_multi_device(context)
+        return True
 
     def draw(self, context):
         import _cycles
@@ -2292,23 +2260,10 @@ class CYCLES_RENDER_PT_debug(CyclesDebugButtonsPanel, Panel):
         row.prop(cscene, "debug_use_cpu_avx2", toggle=True)
         col.prop(cscene, "debug_bvh_layout", text="BVH")
 
-        import platform
-        is_macos = platform.system() == 'Darwin'
         col.separator()
 
-        if is_macos:
-            col = layout.column(heading="Metal")
-            col.prop(cscene, "debug_use_metal_adaptive_compile")
-        else:
-            col = layout.column(heading="CUDA")
-            col.prop(cscene, "debug_use_cuda_adaptive_compile")
-            col = layout.column(heading="OptiX")
-            col.prop(cscene, "debug_use_optix_debug", text="Module Debug")
-
-            col.separator()
-
-            col = layout.column(heading="HIP")
-            col.prop(cscene, "debug_use_hip_adaptive_compile")
+        col = layout.column(heading="Metal")
+        col.prop(cscene, "debug_use_metal_adaptive_compile")
 
         col.separator()
 
@@ -2530,10 +2485,7 @@ def draw_device(self, context):
         col.prop(cscene, "device")
 
         from . import engine
-        if engine.with_osl() and (
-            use_cpu(context) or (
-                use_optix(context) and (
-                engine.osl_version()[1] >= 13 or engine.osl_version()[0] > 1))):
+        if engine.with_osl() and use_cpu(context):
             osl_col = layout.column()
             osl_col.prop(cscene, "shading_system")
 

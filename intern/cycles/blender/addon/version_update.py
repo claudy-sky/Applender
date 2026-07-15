@@ -74,7 +74,7 @@ def do_versions(self):
                 if system.legacy_compute_device_type == 1:
                     prop.compute_device_type = 'NONE'  # Was OpenCL
                 elif system.legacy_compute_device_type == 2:
-                    prop.compute_device_type = 'CUDA'
+                    prop.compute_device_type = 'METAL'  # Was CUDA; GPU backend removed
                 else:
                     prop.compute_device_type = 'NONE'
             except:
@@ -88,6 +88,12 @@ def do_versions(self):
         prop = bpy.context.preferences.addons[__package__].preferences
         if prop.is_property_set("compute_device_type") and prop['compute_device_type'] == 4:
             prop.compute_device_type = 'NONE'
+
+    # CUDA/OptiX/HIP/oneAPI GPU backends have been removed; degrade old configs
+    # referencing them (raw enum values 1, 3, 4, 6) to METAL.
+    prop = bpy.context.preferences.addons[__package__].preferences
+    if prop.is_property_set("compute_device_type") and prop['compute_device_type'] in (1, 3, 4, 6):
+        prop.compute_device_type = 'METAL'
 
     # We don't modify startup file because it assumes to
     # have all the default values only.

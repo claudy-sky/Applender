@@ -13,11 +13,7 @@ CCL_NAMESPACE_BEGIN
 
 enum ComputeDevice {
   COMPUTE_DEVICE_CPU = 0,
-  COMPUTE_DEVICE_CUDA = 1,
-  COMPUTE_DEVICE_OPTIX = 3,
-  COMPUTE_DEVICE_HIP = 4,
   COMPUTE_DEVICE_METAL = 5,
-  COMPUTE_DEVICE_ONEAPI = 6,
 
   COMPUTE_DEVICE_NUM
 };
@@ -52,13 +48,6 @@ static void adjust_device_info_from_preferences(DeviceInfo &info, blender::Point
     }
   }
 
-  if (info.type == DEVICE_ONEAPI && !get_boolean(cpreferences, "use_oneapirt")) {
-    info.use_hardware_raytracing = false;
-  }
-
-  if (info.type == DEVICE_HIP && !get_boolean(cpreferences, "use_hiprt")) {
-    info.use_hardware_raytracing = false;
-  }
 }
 
 static void adjust_device_info(DeviceInfo &device, blender::PointerRNA cpreferences, bool preview)
@@ -114,20 +103,8 @@ DeviceInfo blender_device_info(blender::UserDef &b_preferences,
   if (compute_device != COMPUTE_DEVICE_CPU) {
     /* Query GPU devices with matching types. */
     uint mask = DEVICE_MASK_CPU;
-    if (compute_device == COMPUTE_DEVICE_CUDA) {
-      mask |= DEVICE_MASK_CUDA;
-    }
-    else if (compute_device == COMPUTE_DEVICE_OPTIX) {
-      mask |= DEVICE_MASK_OPTIX;
-    }
-    else if (compute_device == COMPUTE_DEVICE_HIP) {
-      mask |= DEVICE_MASK_HIP;
-    }
-    else if (compute_device == COMPUTE_DEVICE_METAL) {
+    if (compute_device == COMPUTE_DEVICE_METAL) {
       mask |= DEVICE_MASK_METAL;
-    }
-    else if (compute_device == COMPUTE_DEVICE_ONEAPI) {
-      mask |= DEVICE_MASK_ONEAPI;
     }
     const vector<DeviceInfo> devices = Device::available_devices(mask);
 
