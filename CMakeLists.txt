@@ -162,16 +162,6 @@ endif()
 
 get_blender_version()
 
-if(WIN32)
-  add_definitions(
-    # This is the app ID used for file registration, given it's used from several modules
-    # there really is no nice way to get this information consistent without a global define.
-    -DBLENDER_WIN_APPID="blender.${BLENDER_VERSION_MAJOR}.${BLENDER_VERSION_MINOR}"
-    # This is the name that will be shown in the taskbar and OpenWith windows UI
-    -DBLENDER_WIN_APPID_FRIENDLY_NAME="Blender ${BLENDER_VERSION_MAJOR}.${BLENDER_VERSION_MINOR}"
-  )
-endif()
-
 # This changes the default value from Off to On, but will still allow people to manually change
 # this setting through their CMakeCache.txt if they desire to do so.
 set(CMAKE_OPTIMIZE_DEPENDENCIES ON CACHE INTERNAL "")
@@ -183,25 +173,11 @@ set(CMAKE_OPTIMIZE_DEPENDENCIES ON CACHE INTERNAL "")
 option(WITH_BLENDER "Build Blender (disable to build only Cycles stand-alone)." ON)
 mark_as_advanced(WITH_BLENDER)
 
-if(WIN32)
-  option(WITH_BLENDER_THUMBNAILER "\
-Build \"BlendThumb.dll\" helper for Windows explorer integration to support extracting \
-thumbnails from `.blend` files."
-    ON
-  )
-elseif(UNIX AND NOT APPLE)
-  option(WITH_BLENDER_THUMBNAILER "\
-Build stand-alone \"blender-thumbnailer\" command-line thumbnail extraction utility, \
-intended for use by file-managers to extract PNG images from `.blend` files."
-    ON
-  )
-elseif(APPLE)
-  option(WITH_BLENDER_THUMBNAILER "\
+option(WITH_BLENDER_THUMBNAILER "\
 Build \"blender-thumbnailer.appex\" extension for Finder/ QuickLook thumbnail \
 support for blend files."
-    ON
-  )
-endif()
+  ON
+)
 
 option(WITH_INTERNATIONAL "Enable I18N (International fonts and text)" ON)
 
@@ -330,43 +306,6 @@ option(WITH_HARU "Enable features relying on Libharu (Grease Pencil PDF export)"
 option(WITH_GHOST_DEBUG "Enable debugging output for the GHOST library" OFF)
 mark_as_advanced(WITH_GHOST_DEBUG)
 
-option(WITH_GHOST_SDL "\
-Enable building Blender against SDL for windowing rather than the native APIs"
-  OFF
-)
-mark_as_advanced(WITH_GHOST_SDL)
-
-if(UNIX AND NOT (APPLE OR HAIKU))
-  option(WITH_GHOST_X11 "Enable building Blender against X11 for windowing" ON)
-  mark_as_advanced(WITH_GHOST_X11)
-
-  option(WITH_GHOST_WAYLAND "Enable building Blender against Wayland for windowing" ON)
-  mark_as_advanced(WITH_GHOST_WAYLAND)
-
-  if(WITH_GHOST_WAYLAND)
-    option(WITH_GHOST_CSD "Enable client side decorations with Wayland" ON)
-    mark_as_advanced(WITH_GHOST_CSD)
-
-    option(WITH_GHOST_WAYLAND_DYNLOAD "Enable runtime dynamic WAYLAND libraries loading" ON)
-    mark_as_advanced(WITH_GHOST_WAYLAND_DYNLOAD)
-
-    set(WITH_GHOST_WAYLAND_APP_ID "" CACHE STRING "\
-The application ID used for Blender (use default when an empty string), \
-this can be used to differentiate Blender instances by version or branch for example."
-    )
-    mark_as_advanced(WITH_GHOST_WAYLAND_APP_ID)
-  endif()
-endif()
-
-# Only used for WAYLAND, avoid having to check for WAYLAND everywhere by setting as disabled.
-if(NOT DEFINED WITH_GHOST_CSD)
-  set(WITH_GHOST_CSD OFF)
-endif()
-
-if(WITH_GHOST_X11)
-  option(WITH_GHOST_XDND "Enable drag'n'drop support on X11 using XDND protocol" ON)
-endif()
-
 # Misc...
 option(WITH_HEADLESS "Build without graphical support (renderfarm, server mode only)" OFF)
 mark_as_advanced(WITH_HEADLESS)
@@ -387,29 +326,9 @@ set_and_warn_dependency(WITH_AUDASPACE WITH_SYSTEM_AUDASPACE OFF)
 set_and_warn_dependency(WITH_AUDASPACE WITH_RUBBERBAND OFF)
 set_and_warn_incompatible(WITH_SYSTEM_AUDASPACE WITH_RUBBERBAND OFF)
 
-if(WITH_GHOST_X11)
-  option(WITH_X11_XINPUT "Enable X11 Xinput (tablet support and Unicode input)" ON)
-  option(WITH_X11_XFIXES "Enable X11 XWayland cursor warping workaround" ON)
-endif()
+set(WITH_SYSTEM_FREETYPE OFF)
 
-if(UNIX AND NOT APPLE)
-  option(WITH_SYSTEM_FREETYPE "Use the FreeType library provided by the operating system" OFF)
-else()
-  set(WITH_SYSTEM_FREETYPE OFF)
-endif()
-
-if((NOT WITH_PYTHON_MODULE) AND (
-      (WIN32 AND (CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")) OR
-      ((UNIX AND NOT APPLE) AND (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"))))
-  option(WITH_CPU_CHECK "\
-Report when a CPU is not compatible on startup \
-instead of failing to start with an inscrutable error."
-    ON
-  )
-  mark_as_advanced(WITH_CPU_CHECK)
-else()
-  set(WITH_CPU_CHECK OFF)
-endif()
+set(WITH_CPU_CHECK OFF)
 
 # Modifiers
 option(WITH_MOD_FLUID "Enable Mantaflow Fluid Simulation Framework" ON)
@@ -466,31 +385,11 @@ if(APPLE)
 else()
   set(WITH_COREAUDIO OFF)
 endif()
-if(NOT WIN32)
-  set(_option_default ON)
-  if(APPLE)
-    set(_option_default OFF)
-  endif()
-  option(WITH_JACK "Enable JACK Support (http://www.jackaudio.org)" ${_option_default})
-  unset(_option_default)
-  option(WITH_JACK_DYNLOAD "Enable runtime dynamic JACK libraries loading" OFF)
-else()
-  set(WITH_JACK OFF)
-endif()
-if(UNIX AND NOT APPLE)
-  option(WITH_PULSEAUDIO "Enable PulseAudio for audio support on Linux" ON)
-  option(WITH_PULSEAUDIO_DYNLOAD "Enable runtime dynamic PulseAudio libraries loading" OFF)
-  option(WITH_PIPEWIRE "Enable PipeWire for audio support on Linux" ON)
-  option(WITH_PIPEWIRE_DYNLOAD "Enable runtime dynamic PipeWire libraries loading" OFF)
-else()
-  set(WITH_PULSEAUDIO OFF)
-  set(WITH_PIPEWIRE OFF)
-endif()
-if(WIN32)
-  option(WITH_WASAPI "Enable Windows Audio Sessions API for audio support on Windows" ON)
-else()
-  set(WITH_WASAPI OFF)
-endif()
+option(WITH_JACK "Enable JACK Support (http://www.jackaudio.org)" OFF)
+option(WITH_JACK_DYNLOAD "Enable runtime dynamic JACK libraries loading" OFF)
+set(WITH_PULSEAUDIO OFF)
+set(WITH_PIPEWIRE OFF)
+set(WITH_WASAPI OFF)
 
 # Compression
 option(WITH_DRACO "Enable Draco mesh compression Python module (used for glTF)" ON)
@@ -511,35 +410,12 @@ mark_as_advanced(WITH_SYSTEM_GLOG)
 option(WITH_FREESTYLE "Enable Freestyle (advanced edges rendering)" ON)
 
 # Libraries.
-if(UNIX AND NOT APPLE)
-  # Optionally build without pre-compiled libraries.
-  # NOTE: this could be supported on all platforms however in practice UNIX is the only platform
-  # that has good support for detecting installed libraries.
-  option(WITH_LIBS_PRECOMPILED "\
-Detect and link against pre-compiled libraries (typically found under \"../lib/\"). \
-Disabling this option will use the system libraries although cached paths \
-that point to pre-compiled libraries will be left as-is."
-    ON
-  )
-  mark_as_advanced(WITH_LIBS_PRECOMPILED)
-
-  option(WITH_STATIC_LIBS "\
-Try to link with static libraries, as much as possible, \
-to make Blender more portable across distributions"
-    OFF
-  )
-endif()
-
 # Misc
-if(WIN32 OR APPLE OR ((UNIX AND (NOT HAIKU)) AND WITH_GHOST_WAYLAND))
-  option(WITH_INPUT_IME "Enable Input Method Editor (IME) for complex Asian character input" ON)
-else()
-  set(WITH_INPUT_IME OFF)
-endif()
+option(WITH_INPUT_IME "Enable Input Method Editor (IME) for complex Asian character input" ON)
 option(WITH_INPUT_NDOF "Enable NDOF input devices (SpaceNavigator and friends)" ON)
 # On Windows and for the Blender application on macOS, portable install
 # is the only supported installation type, so there is no option.
-if(UNIX AND (NOT APPLE OR WITH_PYTHON_MODULE))
+if(WITH_PYTHON_MODULE)
   option(WITH_INSTALL_PORTABLE "\
 Install redistributable runtime, otherwise install into CMAKE_INSTALL_PREFIX"
     ON
@@ -558,29 +434,9 @@ if((WITH_AUDASPACE AND NOT WITH_SYSTEM_AUDASPACE) OR WITH_MOD_FLUID)
   option(WITH_PYTHON_NUMPY "Include NumPy in Blender (used by Audaspace and Mantaflow)" ON)
 endif()
 
-if(WIN32 OR APPLE)
-  # Windows and macOS have this bundled with Python libraries.
-elseif(WITH_PYTHON_INSTALL OR WITH_PYTHON_NUMPY)
-  set(PYTHON_NUMPY_PATH "" CACHE PATH "\
-Path to python site-packages or dist-packages containing 'numpy' module"
-  )
-  mark_as_advanced(PYTHON_NUMPY_PATH)
-  set(PYTHON_NUMPY_INCLUDE_DIRS "" CACHE PATH "Path to the include directory of the NumPy module")
-  mark_as_advanced(PYTHON_NUMPY_INCLUDE_DIRS)
-endif()
+# macOS has this bundled with Python libraries.
 if(WITH_PYTHON_INSTALL)
   option(WITH_PYTHON_INSTALL_NUMPY "Copy system NumPy into the Blender install directory" ON)
-
-  if(UNIX AND NOT APPLE)
-    option(WITH_PYTHON_INSTALL_REQUESTS "\
-Copy system requests into the Blender install directory"
-      ON
-    )
-    set(PYTHON_REQUESTS_PATH "" CACHE PATH "\
-Path to python site-packages or dist-packages containing 'requests' module"
-    )
-    mark_as_advanced(PYTHON_REQUESTS_PATH)
-  endif()
 
   option(WITH_PYTHON_INSTALL_ZSTANDARD "Copy Zstandard into the Blender install directory" ON)
   set(PYTHON_ZSTANDARD_PATH "" CACHE PATH "\
@@ -675,12 +531,7 @@ Enable multi-threading. TBB is also required for features such as Cycles, OpenVD
   ON
 )
 
-# TBB malloc is only supported:
-# - On MS-Windows.
-# - On Unix/Linux.
-if((WIN32 AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64") OR (UNIX AND NOT APPLE))
-  option(WITH_TBB_MALLOC_PROXY "Enable the TBB malloc replacement" ON)
-endif()
+# TBB malloc is only supported on MS-Windows and Unix/Linux; not on this Apple Silicon-only fork.
 
 option(WITH_EXPERIMENTAL_FEATURES "Enable experimental features" ON)
 
@@ -726,33 +577,9 @@ option(WITH_UI_TESTS "\
 Enable user-interface tests (Experimental)"
   OFF
 )
-if(UNIX AND NOT (APPLE OR HAIKU))
-  # Headless is preferable as opening windows on the developers computer
-  # prevents the system being used while tests run. It's also unreliable,
-  # where tiling compositors ignore the window size causing some tests to fail.
-  set(_option_default OFF)
-  if(WITH_GHOST_WAYLAND)
-    set(_option_default ON)
-  endif()
-  option(WITH_UI_TESTS_HEADLESS "\
-Enable user-interface tests using a headless display server. \
-Currently this depends on WITH_GHOST_WAYLAND and the weston compositor \
-(Experimental)"
-    ${_option_default}
-  )
-  unset(_option_default)
-
-  option(WITH_LINUX_OFFICIAL_RELEASE_TESTS "\
-Enable sanity check tests for the linux official release. \
-These test are only relevant for checking that our official Linux releases are portable and \
-packaged properly. For example that we don't link to any unexpected system libraries."
-    OFF
-  )
-else()
-  set(WITH_UI_TESTS_HEADLESS OFF)
-  # TODO: We should probably add more sanity checks for Windows and Mac as well
-  set(WITH_LINUX_OFFICIAL_RELEASE_TESTS OFF)
-endif()
+set(WITH_UI_TESTS_HEADLESS OFF)
+# TODO: We should probably add more sanity checks for macOS as well.
+set(WITH_LINUX_OFFICIAL_RELEASE_TESTS OFF)
 
 option(WITH_UI_TESTS_VULKAN "\
 Enable UI tests using the Vulkan backend. \
@@ -807,15 +634,7 @@ set(TEST_SYSTEM_PYTHON_EXE "" CACHE PATH "Python executable used to run 'system 
 mark_as_advanced(TEST_SYSTEM_PYTHON_EXE)
 
 
-# Documentation
-if(UNIX AND NOT APPLE)
-  option(WITH_DOC_MANPAGE "Create a manual page (Unix manpage)" OFF)
-endif()
-
-
 # GPU Module
-option(WITH_RENDERDOC "Use RenderDoc API to capture frames" OFF)
-
 option(WITH_GPU_SHADER_ASSERT "\
 Globally enable in-shader asserts.
 (Requires a debug build or setting GPU_FORCE_ENABLE_SHADER_PRINTF to 1)"
@@ -823,7 +642,6 @@ Globally enable in-shader asserts.
 )
 
 mark_as_advanced(
-  WITH_RENDERDOC
   WITH_GPU_SHADER_ASSERT
 )
 
@@ -861,26 +679,11 @@ else()
   set(WITH_METAL_BACKEND OFF)
 endif()
 
-if(WIN32)
-  getDefaultWindowsPrefixBase(CMAKE_GENERIC_PROGRAM_FILES)
-  set(CPACK_INSTALL_PREFIX ${CMAKE_GENERIC_PROGRAM_FILES}/)
-endif()
-
 option(WITH_STRSIZE_DEBUG "\
 Ensure string operations on fixed size buffers \
 (works well with \"WITH_COMPILER_ASAN\" & valgrind to detect incorrect buffer size arguments)"
   OFF)
 mark_as_advanced(WITH_STRSIZE_DEBUG)
-
-# Compiler tool-chain.
-if(UNIX AND NOT APPLE)
-  if((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID MATCHES "Clang"))
-    option(WITH_LINKER_LLD "Use ld.lld linker which is usually faster than ld.bfd" ON)
-    mark_as_advanced(WITH_LINKER_LLD)
-    option(WITH_LINKER_MOLD "Use ld.mold linker which is usually faster than ld.bfd & ld.lld" ON)
-    mark_as_advanced(WITH_LINKER_MOLD)
-  endif()
-endif()
 
 option(WITH_COMPILER_ASAN "\
 Build and link against address sanitizer (only for Debug & RelWithDebInfo targets)."
@@ -1037,57 +840,6 @@ Make paths in macros like __FILE__ relative to top level source and build direct
   mark_as_advanced(WITH_COMPILER_SHORT_FILE_MACRO)
 endif()
 
-if(WIN32)
-  # Use hardcoded paths or find_package to find externals
-  option(WITH_WINDOWS_FIND_MODULES "Use find_package to locate libraries" OFF)
-  mark_as_advanced(WITH_WINDOWS_FIND_MODULES)
-
-  # The python debugger in Visual Studio for has been broken for years
-  # but the upstream project over at https://github.com/microsoft/PTVS
-  # show hopeful signs of life once in a while, so there is hope that
-  # at one point this will start working again. That being said people
-  # do keep turning this option on and end up disappointed it isn't
-  # working and they spend a whole bunch of time on trying to get it to
-  # work. So for now rather than removing this functionality
-  # completely, just disable it.
-
-  if(WINDOWS_PYTHON_DEBUG)
-    # No need for a python version check here, anything over python 3.6 isn't working.
-    message(WARNING "Unsupported python version for VS debugger, disabling WINDOWS_PYTHON_DEBUG")
-    set(WINDOWS_PYTHON_DEBUG OFF)
-  endif()
-
-  # option(WINDOWS_PYTHON_DEBUG "\
-  # Include the files needed for debugging python scripts with visual studio 2017+."
-  #   OFF
-  # )
-  # mark_as_advanced(WINDOWS_PYTHON_DEBUG)
-
-  option(WITH_WINDOWS_BUNDLE_CRT "Bundle the C runtime for install free distribution." ON)
-  mark_as_advanced(WITH_WINDOWS_BUNDLE_CRT)
-  if(WITH_WINDOWS_BUNDLE_CRT AND
-     CMAKE_VERSION VERSION_LESS "4.2.0" AND
-     MSVC_VERSION GREATER_EQUAL 1950)
-    message(WARNING "VS2026 not supported on this CMAKE version: WITH_WINDOWS_BUNDLE_CRT will be disabled")
-    set(WITH_WINDOWS_BUNDLE_CRT OFF)
-  endif()
-  option(WITH_WINDOWS_EXTERNAL_MANIFEST "Use external manifest files" OFF)
-  mark_as_advanced(WITH_WINDOWS_EXTERNAL_MANIFEST)
-
-  option(WITH_WINDOWS_SCCACHE "Use sccache to speed up builds (Ninja builder only)" OFF)
-  mark_as_advanced(WITH_WINDOWS_SCCACHE)
-
-  option(WITH_WINDOWS_RELEASE_PDB "\
-Generate a pdb file for client side stacktraces for release builds"
-    ON
-  )
-  mark_as_advanced(WITH_WINDOWS_RELEASE_PDB)
-
-  option(WITH_WINDOWS_RELEASE_STRIPPED_PDB "Use a stripped PDB file for release builds" ON)
-  mark_as_advanced(WITH_WINDOWS_RELEASE_STRIPPED_PDB)
-
-endif()
-
 if(WIN32 OR XCODE)
   option(IDE_GROUP_SOURCES_IN_FOLDERS "\
 Organize the source files in filters matching the source directory."
@@ -1141,21 +893,10 @@ mark_as_advanced(POSTCONFIGURE_SCRIPT)
 # By default we want to install to the directory we are compiling our executables
 # unless specified otherwise, which we currently do not allow
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  if(WIN32)
-    set(CMAKE_INSTALL_PREFIX ${EXECUTABLE_OUTPUT_PATH}/\${BUILD_TYPE} CACHE PATH "\
+  set(CMAKE_INSTALL_PREFIX ${EXECUTABLE_OUTPUT_PATH}/\${BUILD_TYPE} CACHE PATH "\
 default install path"
-      FORCE
-    )
-  elseif(APPLE)
-    set(CMAKE_INSTALL_PREFIX ${EXECUTABLE_OUTPUT_PATH}/\${BUILD_TYPE} CACHE PATH "\
-default install path"
-      FORCE
-    )
-  else()
-    if(WITH_INSTALL_PORTABLE)
-      set(CMAKE_INSTALL_PREFIX ${EXECUTABLE_OUTPUT_PATH} CACHE PATH "default install path" FORCE)
-    endif()
-  endif()
+    FORCE
+  )
 endif()
 
 # Effective install path including config directory, as a generator expression.
@@ -1251,23 +992,11 @@ if(WITH_INSTALL_PORTABLE)
   set(CMAKE_SKIP_BUILD_RPATH TRUE)
 endif()
 
-if(UNIX AND NOT (APPLE OR HAIKU))
-  set_and_warn_incompatible(WITH_HEADLESS WITH_GHOST_WAYLAND OFF)
-  set_and_warn_incompatible(WITH_HEADLESS WITH_GHOST_X11 OFF)
-endif()
-set_and_warn_incompatible(WITH_HEADLESS WITH_GHOST_SDL OFF)
-
 if(WITH_INPUT_IME)
   set_and_warn_incompatible(WITH_HEADLESS WITH_INPUT_IME OFF)
-  set_and_warn_incompatible(WITH_GHOST_SDL WITH_INPUT_IME OFF)
 endif()
 
 set_and_warn_incompatible(WITH_HEADLESS WITH_XR_OPENXR OFF)
-set_and_warn_incompatible(WITH_GHOST_SDL WITH_XR_OPENXR OFF)
-
-if(WITH_UI_TESTS_HEADLESS)
-  set_and_warn_dependency(WITH_GHOST_WAYLAND WITH_UI_TESTS_HEADLESS OFF)
-endif()
 
 if(WITH_BUILDINFO)
   find_package(Git)
@@ -1317,9 +1046,9 @@ set(WITH_BINRELOC OFF)
 # MACOSX only, set to avoid uninitialized
 set(EXETYPE "")
 
-# WITH_SDL is uncached, depends on either WITH_SDL_AUDIO, WITH_GHOST_SDL or WITH_CYCLES_STANDALONE_GUI being set.
+# WITH_SDL is uncached, depends on either WITH_SDL_AUDIO or WITH_CYCLES_STANDALONE_GUI being set.
 set(WITH_SDL OFF)
-if(WITH_SDL_AUDIO OR WITH_GHOST_SDL OR WITH_CYCLES_STANDALONE_GUI)
+if(WITH_SDL_AUDIO OR WITH_CYCLES_STANDALONE_GUI)
   set(WITH_SDL ON)
 endif()
 
@@ -1420,16 +1149,12 @@ endif()
 # ----------------------------------------------------------------------------
 # Main Platform Checks
 #
-# - UNIX
-# - WIN32
-# - APPLE
+# This fork supports macOS on Apple Silicon only.
 
-if(UNIX AND NOT APPLE)
-  include(platform_unix)
-elseif(WIN32)
-  include(platform_win32)
-elseif(APPLE)
+if(APPLE)
   include(platform_apple)
+else()
+  message(FATAL_ERROR "This fork supports macOS on Apple Silicon only.")
 endif()
 
 
@@ -1463,12 +1188,7 @@ endif()
 unset(_SYSTEM_BIG_ENDIAN)
 
 if(WITH_IMAGE_OPENJPEG)
-  # Special handling of Windows platform where openjpeg is always static.
-  if(WIN32)
-    set(OPENJPEG_DEFINES "-DOPJ_STATIC")
-  else()
-    set(OPENJPEG_DEFINES "")
-  endif()
+  set(OPENJPEG_DEFINES "")
 endif()
 
 if(WITH_COMPILER_ASAN AND NOT WITH_COMPILER_ASAN_EXTERN)
@@ -1553,11 +1273,7 @@ if(WITH_LIBMV OR WITH_GTESTS)
       -DGOOGLE_GLOG_DLL_DECL=
     )
     set(GLOG_LIBRARIES extern_glog)
-    if(WIN32)
-      set(GLOG_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/extern/glog/src/windows)
-    else()
-      set(GLOG_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/extern/glog/include)
-    endif()
+    set(GLOG_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/extern/glog/include)
   endif()
 endif()
 
@@ -2159,9 +1875,7 @@ if(WITH_PYTHON)
     )
   endif()
 
-  if(WIN32)
-    # Always use numpy bundled in precompiled libs.
-  elseif((WITH_PYTHON_INSTALL AND WITH_PYTHON_INSTALL_NUMPY) OR WITH_PYTHON_NUMPY)
+  if((WITH_PYTHON_INSTALL AND WITH_PYTHON_INSTALL_NUMPY) OR WITH_PYTHON_NUMPY)
     if(("${PYTHON_NUMPY_PATH}" STREQUAL "") OR (${PYTHON_NUMPY_PATH} MATCHES NOTFOUND))
       set(_numpy_include "_core/include")
       find_python_package(numpy "${_numpy_include}")
@@ -2169,17 +1883,7 @@ if(WITH_PYTHON)
     endif()
   endif()
 
-  if(WIN32 OR APPLE)
-    # Always copy from precompiled libs.
-  elseif(WITH_PYTHON_INSTALL_REQUESTS)
-    find_python_package(requests "")
-  endif()
-
-  if(WIN32 OR APPLE)
-    # Always copy from precompiled libs.
-  elseif(WITH_PYTHON_INSTALL_ZSTANDARD)
-    find_python_package(zstandard "")
-  endif()
+  # macOS always copies numpy/requests/zstandard from precompiled libs.
 endif()
 
 # Select C++20 as the standard for C++ projects.
@@ -2326,7 +2030,6 @@ if(WITH_BLENDER)
 elseif(WITH_CYCLES_STANDALONE OR WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   add_subdirectory(intern/atomic)
   add_subdirectory(intern/guardedalloc)
-  add_subdirectory(intern/libc_compat)
   add_subdirectory(intern/sky)
 
   add_subdirectory(intern/cycles)
@@ -2427,24 +2130,10 @@ if(FIRST_RUN)
 
   info_cfg_text("System Options:")
   info_cfg_option(WITH_INSTALL_PORTABLE)
-  info_cfg_option(WITH_TBB_MALLOC_PROXY)
   info_cfg_option(WITH_MEM_VALGRIND)
 
   info_cfg_text("GHOST Options:")
   info_cfg_option(WITH_GHOST_DEBUG)
-  info_cfg_option(WITH_GHOST_SDL)
-  if(UNIX AND NOT APPLE)
-    info_cfg_option(WITH_GHOST_X11)
-    info_cfg_option(WITH_GHOST_WAYLAND)
-    if(WITH_GHOST_X11)
-      info_cfg_option(WITH_GHOST_XDND)
-      info_cfg_option(WITH_X11_XFIXES)
-      info_cfg_option(WITH_X11_XINPUT)
-    endif()
-    if(WITH_GHOST_WAYLAND)
-      info_cfg_option(WITH_GHOST_WAYLAND_DYNLOAD)
-    endif()
-  endif()
 
   info_cfg_text("Profiling Options:")
   info_cfg_option(WITH_TRACY)

@@ -12,14 +12,8 @@
 
 #include "GHOST_ISystemPaths.hh"
 
-#ifdef WIN32
-#  include "GHOST_SystemPathsWin32.hh"
-#else
-#  ifdef __APPLE__
-#    include "GHOST_SystemPathsCocoa.hh"
-#  else
-#    include "GHOST_SystemPathsUnix.hh"
-#  endif
+#ifdef __APPLE__
+#  include "GHOST_SystemPathsCocoa.hh"
 #endif
 
 GHOST_ISystemPaths *GHOST_ISystemPaths::system_paths_ = nullptr;
@@ -28,14 +22,8 @@ GHOST_TSuccess GHOST_ISystemPaths::create()
 {
   GHOST_TSuccess success;
   if (!system_paths_) {
-#ifdef WIN32
-    system_paths_ = new GHOST_SystemPathsWin32();
-#else
-#  ifdef __APPLE__
+#ifdef __APPLE__
     system_paths_ = new GHOST_SystemPathsCocoa();
-#  else
-    system_paths_ = new GHOST_SystemPathsUnix();
-#  endif
 #endif
     success = system_paths_ != nullptr ? GHOST_kSuccess : GHOST_kFailure;
   }

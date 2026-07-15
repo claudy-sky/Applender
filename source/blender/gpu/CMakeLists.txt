@@ -43,14 +43,6 @@ if(WITH_BUILDINFO)
   add_definitions(-DWITH_BUILDINFO)
 endif()
 
-if(WITH_RENDERDOC)
-  list(APPEND INC
-    ../../../extern/renderdoc/include
-    ../../../intern/renderdoc_dynload/include
-  )
-  add_definitions(-DWITH_RENDERDOC)
-endif()
-
 if(WITH_GPU_SHADER_ASSERT)
   add_definitions(-DWITH_GPU_SHADER_ASSERT)
 endif()
@@ -709,11 +701,6 @@ endif()
 if(WITH_OPENSUBDIV)
   target_link_libraries(bf_gpu PUBLIC bf_osd_shaders)
 endif()
-
-if(WITH_RENDERDOC)
-  target_link_libraries(bf_gpu PUBLIC bf_intern_renderdoc_dynload)
-endif()
-
 
 if(CXX_WARN_NO_SUGGEST_OVERRIDE)
   target_compile_options(bf_gpu PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wsuggest-override>)

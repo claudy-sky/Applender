@@ -37,14 +37,6 @@ if(WITH_BULLET)
 endif()
 
 
-if(WIN32)
-  # Only windows needs utf16 converter.
-  add_subdirectory(utfconv)
-
-  # Only used for Windows for now.
-  add_subdirectory(uriconvert)
-endif()
-
 if(WITH_MOD_FLUID)
   add_subdirectory(mantaflow)
 endif()
@@ -55,21 +47,6 @@ endif()
 
 if(WITH_QUADRIFLOW)
   add_subdirectory(quadriflow)
-endif()
-
-if(UNIX AND NOT APPLE)
-  add_subdirectory(libc_compat)
-endif()
-
-if(WITH_RENDERDOC)
-  add_subdirectory(renderdoc_dynload)
-endif()
-
-if(UNIX AND NOT APPLE)
-  # Important this comes after "ghost" as it uses includes defined by GHOST's CMake.
-  if(WITH_GHOST_WAYLAND AND WITH_GHOST_WAYLAND_DYNLOAD)
-    add_subdirectory(wayland_dynload)
-  endif()
 endif()
 
 if(WITH_DRACO)
