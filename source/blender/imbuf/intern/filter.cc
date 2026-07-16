@@ -21,6 +21,11 @@
 #  include <arm_neon.h>
 #endif
 
+/* See conversion.cc: NEON<->scalar parity requires no FMA contraction. */
+#if defined(__clang__)
+#  pragma clang fp contract(off)
+#endif
+
 namespace blender {
 
 #if defined(__ARM_NEON)

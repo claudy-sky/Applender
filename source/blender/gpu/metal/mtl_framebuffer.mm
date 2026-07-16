@@ -57,6 +57,10 @@ MTLFrameBuffer::MTLFrameBuffer(MTLContext *ctx, const char *name) : FrameBuffer(
 
 MTLFrameBuffer::~MTLFrameBuffer()
 {
+  /* The attachment textures may outlive this framebuffer: realize any
+   * deferred clear so their contents match pre-deferral behavior. */
+  this->apply_pending_clear_for_external_access();
+
   /* If FrameBuffer is associated with a currently open RenderPass, end. */
   if (context_->main_command_buffer.get_active_framebuffer() == this) {
     context_->main_command_buffer.end_active_command_encoder();
@@ -333,6 +337,35 @@ void MTLFrameBuffer::force_clear()
   }
 }
 
+void MTLFrameBuffer::apply_pending_clear_for_external_access()
+{
+  if (!has_pending_clear_) {
+    return;
+  }
+  MTLContext *mtl_context = MTLContext::get();
+  if (mtl_context == nullptr || mtl_context != context_) {
+    /* Cannot realize the clear on a foreign or absent context. */
+    return;
+  }
+
+  /* Temporarily make this framebuffer the active one so the deferred clear is
+   * realized through a clear-only render pass. The backend-level bind only
+   * records `active_fb`; no pass begins until `ensure_begin_render_pass()`. */
+  FrameBuffer *prev_fb = mtl_context->active_fb;
+  mtl_context->framebuffer_bind(this);
+  this->force_clear();
+  /* End the clear-only pass so tile contents are stored to the attachments
+   * before they are consumed, and so the restored binding does not inherit
+   * this encoder. */
+  if (mtl_context->main_command_buffer.is_inside_render_pass()) {
+    mtl_context->main_command_buffer.end_active_command_encoder();
+  }
+  if (prev_fb && prev_fb != this) {
+    mtl_context->framebuffer_bind(static_cast<MTLFrameBuffer *>(prev_fb));
+  }
+  BLI_assert(has_pending_clear_ == false);
+}
+
 void MTLFrameBuffer::clear(GPUFrameBufferBits buffers,
                            const double4 clear_col,
                            float clear_depth,
@@ -525,6 +558,9 @@ void MTLFrameBuffer::read(GPUFrameBufferBits planes,
                           int slot,
                           void *r_data)
 {
+  /* Read-back consumes the attachment textures directly: a deferred clear
+   * must be realized first or stale pre-clear contents would be read. */
+  this->apply_pending_clear_for_external_access();
 
   BLI_assert((planes & GPU_STENCIL_BIT) == 0);
   BLI_assert(area[2] > 0);
@@ -1871,6 +1907,10 @@ void MTLFrameBuffer::blit(uint read_slot,
   if (!metal_fb_write) {
     return;
   }
+  /* The blit reads this framebuffer's attachment textures directly: realize
+   * any deferred clear first (see apply_pending_clear_for_external_access). */
+  this->apply_pending_clear_for_external_access();
+
   MTLContext *mtl_context = MTLContext::get();
 
   const bool do_color = (blit_buffers & GPU_COLOR_BIT);

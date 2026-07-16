@@ -25,6 +25,15 @@
 #  include <arm_neon.h>
 #endif
 
+/* Bit-exact NEON<->scalar parity in this file depends on multiply+add pairs
+ * NOT contracting into FMA on either side: the scalar reference
+ * (255.0f * val) + 0.5f rounds twice, and the NEON path deliberately uses
+ * separate vmulq/vaddq. The build sets -ffp-contract=off globally; pin it
+ * per-TU so the parity cannot silently break if that flag ever changes. */
+#if defined(__clang__)
+#  pragma clang fp contract(off)
+#endif
+
 namespace blender {
 
 #if defined(__ARM_NEON)

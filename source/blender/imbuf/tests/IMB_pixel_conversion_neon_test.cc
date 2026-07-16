@@ -31,6 +31,12 @@
 #include <limits>
 #include <vector>
 
+/* The scalar reference calls in this test must round exactly like the
+ * production scalar path: keep FMA contraction off in this TU as well. */
+#if defined(__clang__)
+#  pragma clang fp contract(off)
+#endif
+
 namespace blender::imbuf::tests {
 
 using uchar = unsigned char;

@@ -859,12 +859,19 @@ static void ensure_texture_bindings(MTLContext &ctx,
     id<MTLTexture> tex = gpu_tex->has_custom_swizzle() ? gpu_tex->get_metal_handle_base() :
                                                          gpu_tex->get_metal_handle();
 
-    if (!cache_disabled) {
+    /* Textures on the texture-atomics emulation path also bind a workaround
+     * SSBO and a metadata push-constant whose slots other binds may reuse
+     * between draws: bypass the cache for them so both are always re-bound. */
+    const bool needs_atomic_workaround =
+        shader_interface.use_texture_atomic() &&
+        (gpu_tex->usage_get() & GPU_TEXTURE_USAGE_ATOMIC) &&
+        (MTLBackend::get_capabilities().supports_texture_atomics == false);
+
+    if (!cache_disabled && !needs_atomic_workaround) {
       MTLResourceBindingCacheEntry &entry = dirty_cache.image_cache[slot];
       if (entry.generation == generation && entry.resource == (const void *)tex) {
         /* Already resident in this encoder's argument table from an earlier bind this
-         * generation -- skip. Atomic workaround buffer binding below is also skipped: it is a
-         * function of `gpu_tex`/`shader_interface` alone, which are unchanged on a cache hit. */
+         * generation -- skip. */
         continue;
       }
       entry.resource = (const void *)tex;
