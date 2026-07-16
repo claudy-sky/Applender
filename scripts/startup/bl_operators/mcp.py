@@ -32,6 +32,11 @@ from bpy.props import StringProperty
 # These operators are thin wrappers around it, per the architecture: the
 # heavy lifting is not reimplemented here.
 import _bpy_internal.mcp as mcp_client
+# The client raises these for ordinary runtime failures (a slow server, an
+# error response, a broken transport); catch them in the operators so they
+# surface as a clean report instead of an unhandled traceback.
+from _bpy_internal.mcp.jsonrpc import ProtocolError, RemoteError
+from _bpy_internal.mcp.transport import TransportError
 
 
 class MCP_OT_connect(Operator):
@@ -110,7 +115,7 @@ class MCP_OT_call_tool(Operator):
 
         try:
             mcp_client.call_tool(self.name, self.tool, arguments)
-        except (RuntimeError, KeyError) as ex:
+        except (RuntimeError, KeyError, TimeoutError, ProtocolError, RemoteError, TransportError) as ex:
             self.report({'ERROR'}, "MCP tool call failed: %s" % ex)
             return {'CANCELLED'}
 

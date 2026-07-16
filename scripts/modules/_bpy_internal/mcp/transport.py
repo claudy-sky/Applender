@@ -214,3 +214,10 @@ class HttpTransport(Transport):
 
     def close(self) -> None:
         self._closed = True
+
+    @property
+    def is_alive(self) -> bool:
+        # Lets the client's reader loop terminate after `close()` instead of
+        # spinning for the process lifetime (the reader uses
+        # `getattr(transport, "is_alive", True)`).
+        return not self._closed

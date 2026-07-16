@@ -88,6 +88,36 @@ _servers: dict[str, dict] = {}
 _connections: dict[str, _ServerConnection] = {}
 _registry_lock = threading.Lock()
 
+# Set once the on-disk config has been auto-loaded (or an explicit
+# configure()/configure_from_file() has already populated the registry),
+# so the lazy load is attempted at most once.
+_auto_config_done = False
+
+
+def _ensure_configured() -> None:
+    """Lazily load the on-disk server config the first time the registry is
+    consulted, so an install that ships an ``mcp_servers.json`` works without
+    an explicit :func:`configure_from_file` call.
+
+    Best-effort: a missing or malformed config leaves the registry empty
+    rather than raising, and an explicit prior :func:`configure` (non-empty
+    registry) is never clobbered.
+    """
+    global _auto_config_done
+    if _auto_config_done:
+        return
+    _auto_config_done = True
+    with _registry_lock:
+        if _servers:
+            return
+    try:
+        configure_from_file()
+    except Exception:
+        # A malformed / unreadable config must not break connect(); the
+        # registry simply stays empty and the caller gets a clean "no such
+        # server" error.
+        pass
+
 
 def default_config_path() -> str:
     """Return the path to the user's MCP server config file.
@@ -172,6 +202,7 @@ def configure_from_file(path: str | None = None) -> None:
 
 def list_servers() -> list[str]:
     """Return the names of every configured (not necessarily connected) server."""
+    _ensure_configured()
     with _registry_lock:
         return sorted(_servers.keys())
 
@@ -183,6 +214,7 @@ def is_connected(name: str) -> bool:
 
 
 def _get_config(name: str) -> dict:
+    _ensure_configured()
     with _registry_lock:
         config = _servers.get(name)
     if config is None:
@@ -288,7 +320,14 @@ def connect(name: str, timeout: float = 30.0) -> bool:
 
     if not done.wait(timeout + _CONNECT_JOIN_SLACK):
         # The worker thread is stuck past its own bounded wait (e.g. a
-        # hung subprocess start). Don't block the caller forever.
+        # hung subprocess start). Don't block the caller forever, and
+        # best-effort close any transport it already started so a stuck
+        # connect does not leak a subprocess / reader thread.
+        try:
+            if conn.transport is not None:
+                conn.transport.close()
+        except Exception:
+            pass
         return False
 
     if outcome["ok"]:
