@@ -1309,8 +1309,7 @@ enum KernelBVHLayout {
 
   /* Default BVH layout to use for CPU. */
   BVH_LAYOUT_AUTO = BVH_LAYOUT_EMBREE,
-  BVH_LAYOUT_ALL = BVH_LAYOUT_BVH2 | BVH_LAYOUT_EMBREE | BVH_LAYOUT_METAL |
-                   BVH_LAYOUT_MULTI_METAL | BVH_LAYOUT_MULTI_METAL_EMBREE,
+  BVH_LAYOUT_ALL = BVH_LAYOUT_BVH2 | BVH_LAYOUT_EMBREE | BVH_LAYOUT_METAL,
 };
 
 /* Specialized struct that can become constants in dynamic compilation. */
