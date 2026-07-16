@@ -101,8 +101,8 @@ class FileDescriptorRAII : blender::NonCopyable, blender::NonMovable {
 
 static NSError *create_nserror_from_string(NSString *errorStr)
 {
-  NSLog(@"Blender Thumbnailer Error: %@", errorStr);
-  return [NSError errorWithDomain:@"org.blenderfoundation.blender.thumbnailer"
+  NSLog(@"Applender Thumbnailer Error: %@", errorStr);
+  return [NSError errorWithDomain:@"org.applender.applender.thumbnailer"
                              code:-1
                          userInfo:@{NSLocalizedDescriptionKey : errorStr}];
 }
