@@ -212,7 +212,12 @@ ccl_device_inline packed_float3 operator+=(packed_float3 &a, const float3 b)
 
 ccl_device_inline bool operator==(const float3 a, const float3 b)
 {
-#  ifdef __KERNEL_SSE__
+#  if defined(__KERNEL_NEON_NATIVE__)
+  /* Force the unused lane 3 to all-ones before checking that the minimum
+   * lane is non-zero (each comparison lane is 0 or ~0u). */
+  const uint32x4_t mask = vsetq_lane_u32(~0u, vceqq_f32(a.m128, b.m128), 3);
+  return vminvq_u32(mask) != 0;
+#  elif defined(__KERNEL_SSE__)
   return (_mm_movemask_ps(_mm_cmpeq_ps(a.m128, b.m128)) & 7) == 7;
 #  else
   return (a.x == b.x && a.y == b.y && a.z == b.z);
@@ -253,7 +258,14 @@ ccl_device_inline int3 operator<(const float3 a, const float3 b)
 
 ccl_device_inline float dot(const float3 a, const float3 b)
 {
-#  if defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
+#  if defined(__KERNEL_NEON_NATIVE__)
+  /* Zero the product's unused lane 3 before the horizontal add, since the
+   * float3 w lanes may hold arbitrary values. Matches _mm_dp_ps(a, b, 0x7F)
+   * without the broadcast/extract round-trip of the sse2neon emulation. */
+  float32x4_t t = vmulq_f32(a.m128, b.m128);
+  t = vsetq_lane_f32(0.0f, t, 3);
+  return vaddvq_f32(t);
+#  elif defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
   return _mm_cvtss_f32(_mm_dp_ps(a, b, 0x7F));
 #  else
   return a.x * b.x + a.y * b.y + a.z * b.z;
@@ -278,7 +290,10 @@ ccl_device_inline int3 operator>(const float3 a, const float b)
 
 ccl_device_inline float dot_xy(const float3 a, const float3 b)
 {
-#if defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
+#if defined(__KERNEL_NEON_NATIVE__)
+  /* Pairwise add of the two low product lanes, same order as _mm_hadd_ps. */
+  return vaddv_f32(vget_low_f32(vmulq_f32(a.m128, b.m128)));
+#elif defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
   return _mm_cvtss_f32(_mm_hadd_ps(_mm_mul_ps(a, b), b));
 #else
   return a.x * b.x + a.y * b.y;
@@ -287,7 +302,11 @@ ccl_device_inline float dot_xy(const float3 a, const float3 b)
 
 ccl_device_inline float len(const float3 a)
 {
-#if defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
+#if defined(__KERNEL_NEON_NATIVE__)
+  /* Scalar sqrt of the native dot product; IEEE identical to the vector
+   * sqrt lane that the sse2neon path extracts. */
+  return sqrtf(dot(a, a));
+#elif defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
   return _mm_cvtss_f32(_mm_sqrt_ss(_mm_dp_ps(a.m128, a.m128, 0x7F)));
 #else
   return sqrtf(dot(a, a));
@@ -331,7 +350,11 @@ ccl_device_inline float3 cross(const float3 a, const float3 b)
 
 ccl_device_inline float3 normalize(const float3 a)
 {
-#  if defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
+#  if defined(__KERNEL_NEON_NATIVE__)
+  /* One scalar sqrt instead of the four-lane sqrt the sse2neon path does. */
+  const float32x4_t norm = vdupq_n_f32(sqrtf(dot(a, a)));
+  return float3(vdivq_f32(a.m128, norm));
+#  elif defined(__KERNEL_SSE42__) && defined(__KERNEL_SSE__)
   const __m128 norm = _mm_sqrt_ps(_mm_dp_ps(a.m128, a.m128, 0x7F));
   return float3(_mm_div_ps(a.m128, norm));
 #  else

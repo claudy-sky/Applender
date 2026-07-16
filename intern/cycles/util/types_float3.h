@@ -146,6 +146,10 @@ ccl_device_inline int4 make_int4(const float3 f)
 {
 #if defined(__KERNEL_GPU__)
   return make_int4((int)f.x, (int)f.y, (int)f.z, 0);
+#elif defined(__KERNEL_NEON_NATIVE__)
+  /* Round to nearest even, like _mm_cvtps_epi32 under the default (and never
+   * changed) rounding mode; sse2neon instead branches on FPCR at runtime. */
+  return int4(vreinterpretq_m128i_s32(vcvtnq_s32_f32(f.m128)));
 #elif defined(__KERNEL_SSE__)
   return int4(_mm_cvtps_epi32(f.m128));
 #else
@@ -155,7 +159,10 @@ ccl_device_inline int4 make_int4(const float3 f)
 
 ccl_device_inline int3 make_int3(const float3 f)
 {
-#ifdef __KERNEL_SSE__
+#if defined(__KERNEL_NEON_NATIVE__)
+  /* See make_int4 above for the rounding mode contract. */
+  return int3(vreinterpretq_m128i_s32(vcvtnq_s32_f32(f.m128)));
+#elif defined(__KERNEL_SSE__)
   return int3(_mm_cvtps_epi32(f.m128));
 #else
   return make_int3((int)f.x, (int)f.y, (int)f.z);

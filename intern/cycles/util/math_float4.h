@@ -192,7 +192,11 @@ ccl_device_inline int4 operator<=(const float4 a, const float4 b)
 
 ccl_device_inline bool operator==(const float4 a, const float4 b)
 {
-#  ifdef __KERNEL_SSE__
+#  if defined(__KERNEL_NEON_NATIVE__)
+  /* Each comparison lane is 0 or ~0u, so the minimum is non-zero iff all
+   * four lanes are set. Cheaper than emulating _mm_movemask_ps. */
+  return vminvq_u32(vceqq_f32(a.m128, b.m128)) != 0;
+#  elif defined(__KERNEL_SSE__)
   return (_mm_movemask_ps(_mm_cmpeq_ps(a.m128, b.m128)) & 15) == 15;
 #  else
   return (a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w);
@@ -334,7 +338,11 @@ template<> __forceinline float4 shuffle<2, 3, 2, 3>(const float4 a, const float4
 
 template<size_t i> __forceinline float extract(const float4 a)
 {
+#  ifdef __KERNEL_NEON_NATIVE__
+  return vgetq_lane_f32(a.m128, i);
+#  else
   return _mm_cvtss_f32(shuffle<i, i, i, i>(a));
+#  endif
 }
 template<> __forceinline float extract<0>(const float4 a)
 {

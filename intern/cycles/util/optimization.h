@@ -42,6 +42,13 @@
 #    define __KERNEL_SSE3__
 #    define __KERNEL_SSE42__
 
+/* Native Neon fast paths that take precedence over the sse2neon translation
+ * of the SSE code. Define WITH_CYCLES_DISABLE_NATIVE_NEON to compile the
+ * sse2neon paths instead, e.g. to bisect behavior differences. */
+#    ifndef WITH_CYCLES_DISABLE_NATIVE_NEON
+#      define __KERNEL_NEON_NATIVE__
+#    endif
+
 #  endif
 
 #endif
