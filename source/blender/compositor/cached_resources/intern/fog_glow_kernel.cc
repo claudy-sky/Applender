@@ -7,11 +7,8 @@
 #include <memory>
 #include <numeric>
 
-#if defined(WITH_FFTW3)
-#  include <fftw3.h>
-#endif
-
 #include "BLI_enumerable_thread_specific.hh"
+#include "BLI_fft.hh"
 #include "BLI_hash.hh"
 #include "BLI_index_range.hh"
 #include "BLI_math_base.hh"
@@ -81,16 +78,11 @@ FogGlowKernel::FogGlowKernel(int kernel_size, int2 spatial_size, math::AngleRadi
    * more information. */
   const int2 frequency_size = int2(spatial_size.x / 2 + 1, spatial_size.y);
 
-  float *kernel_spatial_domain = fftwf_alloc_real(spatial_size.x * spatial_size.y);
-  frequencies_ = reinterpret_cast<std::complex<float> *>(
-      fftwf_alloc_complex(frequency_size.x * frequency_size.y));
+  float *kernel_spatial_domain = fft::alloc_real(spatial_size.x * spatial_size.y);
+  frequencies_ = fft::alloc_complex(frequency_size.x * frequency_size.y);
 
   /* Create a real to complex plan to transform the kernel to the frequency domain. */
-  fftwf_plan forward_plan = fftwf_plan_dft_r2c_2d(spatial_size.y,
-                                                  spatial_size.x,
-                                                  kernel_spatial_domain,
-                                                  reinterpret_cast<fftwf_complex *>(frequencies_),
-                                                  FFTW_ESTIMATE);
+  const fft::RealToComplex2DPlan forward_plan(spatial_size, kernel_spatial_domain, frequencies_);
 
   /* Use a double to sum the kernel since floats are not stable with threaded summation. */
   threading::EnumerableThreadSpecific<double> sum_by_thread([]() { return 0.0; });
@@ -119,10 +111,8 @@ FogGlowKernel::FogGlowKernel(int kernel_size, int2 spatial_size, math::AngleRadi
     }
   });
 
-  fftwf_execute_dft_r2c(
-      forward_plan, kernel_spatial_domain, reinterpret_cast<fftwf_complex *>(frequencies_));
-  fftwf_destroy_plan(forward_plan);
-  fftwf_free(kernel_spatial_domain);
+  forward_plan.execute(kernel_spatial_domain, frequencies_);
+  fft::free_buffer(kernel_spatial_domain);
 
   /* The computed kernel is not normalized and should be normalized, but instead of normalizing the
    * kernel during computation, we normalize it in the frequency domain when convolving the kernel
@@ -137,7 +127,7 @@ FogGlowKernel::FogGlowKernel(int kernel_size, int2 spatial_size, math::AngleRadi
 FogGlowKernel::~FogGlowKernel()
 {
 #if defined(WITH_FFTW3)
-  fftwf_free(frequencies_);
+  fft::free_buffer(frequencies_);
 #endif
 }
 

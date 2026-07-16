@@ -60,6 +60,7 @@ set(SRC
   intern/easing.cc
   intern/endian_switch.cc
   intern/expr_pylike_eval.cc
+  intern/fft.cc
   intern/fftw.cc
   intern/fileops.cc
   intern/fileops_c.cc
@@ -223,6 +224,7 @@ set(SRC
   BLI_enumerable_thread_specific.hh
   BLI_execution_mode.hh
   BLI_expr_pylike_eval.hh
+  BLI_fft.hh
   BLI_fftw.hh
   BLI_fileops.hh
   BLI_fileops_types.hh
@@ -442,6 +444,10 @@ endif()
 
 if(WITH_MEM_VALGRIND)
   add_definitions(-DWITH_MEM_VALGRIND)
+endif()
+
+if(WITH_FFT_ACCELERATE)
+  add_definitions(-DWITH_FFT_ACCELERATE)
 endif()
 
 if(APPLE)

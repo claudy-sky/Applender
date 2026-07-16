@@ -10,11 +10,7 @@
 
 #include "MEM_guardedalloc.h"
 
-#if defined(WITH_FFTW3)
-#  include <fftw3.h>
-#endif
-
-#include "BLI_fftw.hh"
+#include "BLI_fft.hh"
 #include "BLI_index_range.hh"
 #include "BLI_math_angle_types.hh"
 #include "BLI_math_base.hh"
@@ -2106,7 +2102,7 @@ class GlareOperation : public NodeOperation {
     const int needed_padding_amount = kernel_size;
     const int2 image_size = highlights.domain().data_size;
     const int2 needed_spatial_size = image_size + needed_padding_amount - 1;
-    const int2 spatial_size = fftw::optimal_size_for_real_transform(needed_spatial_size);
+    const int2 spatial_size = fft::optimal_size_for_real_transform(needed_spatial_size);
 
     /* The FFTW real to complex transforms utilizes the hermitian symmetry of real transforms and
      * stores only half the output since the other half is redundant, so we only allocate half of
@@ -2122,17 +2118,12 @@ class GlareOperation : public NodeOperation {
     const int64_t spatial_pixels_count = spatial_pixels_per_channel * channels_count;
     const int64_t frequency_pixels_count = frequency_pixels_per_channel * channels_count;
 
-    float *image_spatial_domain = fftwf_alloc_real(spatial_pixels_count);
-    std::complex<float> *image_frequency_domain = reinterpret_cast<std::complex<float> *>(
-        fftwf_alloc_complex(frequency_pixels_count));
+    float *image_spatial_domain = fft::alloc_real(spatial_pixels_count);
+    std::complex<float> *image_frequency_domain = fft::alloc_complex(frequency_pixels_count);
 
     /* Create a real to complex plan to transform the image to the frequency domain. */
-    fftwf_plan forward_plan = fftwf_plan_dft_r2c_2d(
-        spatial_size.y,
-        spatial_size.x,
-        image_spatial_domain,
-        reinterpret_cast<fftwf_complex *>(image_frequency_domain),
-        FFTW_ESTIMATE);
+    const fft::RealToComplex2DPlan forward_plan(
+        spatial_size, image_spatial_domain, image_frequency_domain);
 
     const float *highlights_buffer = nullptr;
     if (this->context().use_gpu()) {
@@ -2167,10 +2158,8 @@ class GlareOperation : public NodeOperation {
 
     threading::parallel_for(IndexRange(channels_count), 1, [&](const IndexRange sub_range) {
       for (const int64_t channel : sub_range) {
-        fftwf_execute_dft_r2c(forward_plan,
-                              image_spatial_domain + spatial_pixels_per_channel * channel,
-                              reinterpret_cast<fftwf_complex *>(image_frequency_domain) +
-                                  frequency_pixels_per_channel * channel);
+        forward_plan.execute(image_spatial_domain + spatial_pixels_per_channel * channel,
+                             image_frequency_domain + frequency_pixels_per_channel * channel);
       }
     });
 
@@ -2198,18 +2187,12 @@ class GlareOperation : public NodeOperation {
     });
 
     /* Create a complex to real plan to transform the image to the real domain. */
-    fftwf_plan backward_plan = fftwf_plan_dft_c2r_2d(
-        spatial_size.y,
-        spatial_size.x,
-        reinterpret_cast<fftwf_complex *>(image_frequency_domain),
-        image_spatial_domain,
-        FFTW_ESTIMATE);
+    const fft::ComplexToReal2DPlan backward_plan(
+        spatial_size, image_frequency_domain, image_spatial_domain);
 
     threading::parallel_for(IndexRange(channels_count), 1, [&](const IndexRange sub_range) {
       for (const int64_t channel : sub_range) {
-        fftwf_execute_dft_c2r(backward_plan,
-                              reinterpret_cast<fftwf_complex *>(image_frequency_domain) +
-                                  frequency_pixels_per_channel * channel,
+        backward_plan.execute(image_frequency_domain + frequency_pixels_per_channel * channel,
                               image_spatial_domain + spatial_pixels_per_channel * channel);
       }
     });
@@ -2244,10 +2227,8 @@ class GlareOperation : public NodeOperation {
       MEM_delete(output);
     }
 
-    fftwf_destroy_plan(forward_plan);
-    fftwf_destroy_plan(backward_plan);
-    fftwf_free(image_spatial_domain);
-    fftwf_free(image_frequency_domain);
+    fft::free_buffer(image_spatial_domain);
+    fft::free_buffer(image_frequency_domain);
 #else
     Result fog_glow_result = context().create_result(ResultType::Color);
     fog_glow_result.allocate_texture(highlights.domain());

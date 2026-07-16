@@ -271,6 +271,15 @@ Enable Legacy IK solver (only disable for development)"
   ON
 )
 option(WITH_FFTW3 "Enable FFTW3 support (Used for smoke, ocean sim, glare, and audio effects)" ON)
+if(APPLE)
+  option(WITH_FFT_ACCELERATE "\
+Use Apple's Accelerate framework (vDSP) as the FFT backend for compositor effects where possible, \
+falling back to FFTW3 otherwise (requires WITH_FFTW3)"
+    ON
+  )
+else()
+  set(WITH_FFT_ACCELERATE OFF)
+endif()
 option(WITH_PUGIXML "Enable PugiXML support (Used for OpenImageIO, Grease Pencil SVG export)" ON)
 option(WITH_BULLET "Enable Bullet (Physics Engine)" ON)
 option(WITH_SYSTEM_BULLET "\
@@ -982,6 +991,9 @@ set_and_warn_dependency(WITH_USD WITH_HYDRA OFF)
 # Ocean modifier and Rubberband require FFTW3.
 set_and_warn_dependency(WITH_FFTW3 WITH_MOD_OCEANSIM OFF)
 set_and_warn_dependency(WITH_FFTW3 WITH_RUBBERBAND OFF)
+
+# The Accelerate FFT backend falls back to FFTW3 and requires it.
+set_and_warn_dependency(WITH_FFTW3 WITH_FFT_ACCELERATE OFF)
 
 if(NOT WITH_CYCLES)
   set(WITH_CYCLES_OSL OFF)
