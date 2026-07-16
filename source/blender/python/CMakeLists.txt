@@ -11,3 +11,7 @@ add_subdirectory(generic)
 add_subdirectory(gpu)
 add_subdirectory(mathutils)
 add_subdirectory(bmesh)
+
+if(WITH_MCP)
+  add_subdirectory(mcp)
+endif()

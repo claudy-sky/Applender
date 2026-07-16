@@ -65,6 +65,15 @@
 
 namespace blender {
 
+#ifdef WITH_MCP
+/* Forward declaration for `bpy.mcp`, implemented in
+ * `source/blender/python/mcp/mcp_py_api.cc`. Transport and JSON parsing
+ * for MCP (Model Context Protocol) support live in the embedded Python
+ * module `_bpy_internal.mcp`; this native module is a thin binding over
+ * the `blender::mcp` facade (see `intern/mcp/MCP_client.hh`). */
+PyObject *BPyInit_mcp();
+#endif
+
 PyObject *bpy_package_py = nullptr;
 
 PyDoc_STRVAR(
@@ -824,6 +833,9 @@ void BPy_init_modules(bContext *C)
   PyModule_AddObject(mod, "_utils_units", BPY_utils_units());
   PyModule_AddObject(mod, "_utils_previews", BPY_utils_previews_module());
   PyModule_AddObject(mod, "msgbus", BPY_msgbus_module());
+#ifdef WITH_MCP
+  PyModule_AddObject(mod, "mcp", BPyInit_mcp());
+#endif
 
   PointerRNA ctx_ptr = RNA_pointer_create_discrete(nullptr, RNA_Context, C);
   bpy_context_module = reinterpret_cast<BPy_StructRNA *>(pyrna_struct_CreatePyObject(&ctx_ptr));

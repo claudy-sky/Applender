@@ -1821,3 +1821,17 @@ if(WITH_LINUX_OFFICIAL_RELEASE_TESTS)
   unset(extra_args)
   unset(release_root_folder)
 endif()
+
+# ------------------------------------------------------------------------------
+# MCP (Model Context Protocol) client
+# ------------------------------------------------------------------------------
+
+if(WITH_MCP)
+  # `jsonrpc.py` is pure standard library and must stay importable (and
+  # testable) without `bpy`, so this runs the plain Python interpreter
+  # directly (via `add_python_test`) rather than through Blender.
+  add_python_test(
+    mcp_jsonrpc
+    ${CMAKE_CURRENT_LIST_DIR}/mcp_jsonrpc_test.py
+  )
+endif()

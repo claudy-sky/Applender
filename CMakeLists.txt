@@ -202,6 +202,11 @@ installs to PYTHON_SITE_PACKAGES (or CMAKE_INSTALL_PREFIX if WITH_INSTALL_PORTAB
   OFF
 )
 
+option(WITH_MCP "\
+Build the native MCP (Model Context Protocol) client (bpy.mcp + intern/mcp)."
+  ON
+)
+
 option(WITH_BUILDINFO "\
 Include extra build details (only disable for development & faster builds)"
   ON
