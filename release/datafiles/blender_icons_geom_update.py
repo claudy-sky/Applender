@@ -54,7 +54,7 @@ def main() -> int:
 
     if not os.path.exists(blender_bin):
         if sys.platform == 'darwin':
-            blender_app_path = '/Applications/Blender.app/Contents/MacOS/Blender'
+            blender_app_path = '/Applications/Applender.app/Contents/MacOS/Applender'
             if os.path.exists(blender_app_path):
                 blender_bin = blender_app_path
 

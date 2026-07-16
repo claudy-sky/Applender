@@ -42,7 +42,7 @@ def url_from_blender() -> str:
     os_type = platform.system()
     script_directory = Path(__file__).parent.resolve()
     if os_type == "Darwin":  # macOS appears as Darwin.
-        blender_bin = script_directory.joinpath("../../../../../../MacOS/Blender")
+        blender_bin = script_directory.joinpath("../../../../../../MacOS/Applender")
     elif os_type == "Windows":
         blender_bin = script_directory.joinpath("../../../../../Blender.exe")
     else:  # Linux and other Unix systems.

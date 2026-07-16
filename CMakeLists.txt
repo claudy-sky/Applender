@@ -71,7 +71,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Initialize Project
 
-project(Blender)
+project(Applender)
 
 enable_testing()
 
@@ -709,6 +709,14 @@ mark_as_advanced(WITH_COMPILER_ASAN_EXTERN)
 # (both CLANG/LLVM and GCC ones).
 set_and_warn_incompatible(WITH_COMPILER_ASAN WITH_MEM_VALGRIND OFF)
 set_and_warn_incompatible(WITH_COMPILER_ASAN_EXTERN WITH_MEM_VALGRIND OFF)
+
+option(WITH_HARDENING "\
+Enable defense-in-depth compiler and standard-library hardening: stack protector, \
+libc++ bounds/validity assertions (_LIBCPP_HARDENING_MODE), and fortified libc calls. \
+Low overhead; applied on the Apple build. Disable for maximum performance or when \
+diagnosing hardening-flag incompatibilities."
+  ON)
+mark_as_advanced(WITH_HARDENING)
 
 option(WITH_COMPILER_CODE_COVERAGE "\
 Build and link with code coverage support (only for Debug targets)."

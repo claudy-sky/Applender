@@ -478,7 +478,7 @@ static ui::Block *wm_block_about_create(bContext *C, ARegion *region, void * /*a
 
   ui::Layout &col = layout.column(true);
 
-  uiItemL_ex(&col, IFACE_("Blender"), ICON_NONE, true, false);
+  uiItemL_ex(&col, IFACE_("Applender"), ICON_NONE, true, false);
 
   MenuType *mt = WM_menutype_find("WM_MT_splash_about", true);
   if (mt) {
@@ -501,9 +501,9 @@ static wmOperatorStatus wm_splash_about_invoke(bContext *C,
 
 void WM_OT_splash_about(wmOperatorType *ot)
 {
-  ot->name = "About Blender";
+  ot->name = "About Applender";
   ot->idname = "WM_OT_splash_about";
-  ot->description = "Open a window with information about Blender";
+  ot->description = "Open a window with information about Applender";
 
   ot->invoke = wm_splash_about_invoke;
   ot->poll = WM_operator_winactive;
