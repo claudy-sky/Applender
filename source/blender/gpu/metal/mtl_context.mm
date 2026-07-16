@@ -438,6 +438,16 @@ void MTLContext::activate()
     as_bind.tlas = nullptr;
   }
 
+  /* Invalidate all per-encoder binding state (including the conservative binding-dirty caches,
+   * MTLBindingDirtyCache) -- mirrors the `pipeline_state.dirty_flags =
+   * MTL_PIPELINE_STATE_ALL_FLAG` reset that occurs on every new render pass. A re-activated
+   * context must not trust bindings cached against encoders that belonged to a prior activation
+   * on this or another thread. `main_command_buffer` grants MTLContext friend access to these
+   * otherwise-private members; reset_state() is safe to call with no encoder active (also done
+   * unconditionally in MTLCommandBufferManager::prepare()). */
+  this->main_command_buffer.render_pass_state_.reset_state();
+  this->main_command_buffer.compute_state_.reset_state();
+
   /* Ensure imm active. */
   immActivate();
 }
@@ -786,6 +796,16 @@ static void bind_sampler_argument_buffer(
   bindings.bind_buffer(enc, encoder_buf->get_metal_buffer(), 0, arg_buffer_idx);
 }
 
+/* Whether the conservative binding-dirty caches (MTLBindingDirtyCache) are disabled, forcing
+ * every texture/UBO/SSBO slot to be treated as dirty on every call -- byte-for-byte the same
+ * rebind behavior as before this optimization existed. Checked once and cached, matching the
+ * existing `METAL_FORCE_INTEL`/`BLENDER_METAL_RAYTRACING` pattern in mtl_backend.mm. */
+static bool metal_binding_cache_disabled()
+{
+  static const bool disabled = (getenv("BLENDER_METAL_NO_BINDING_CACHE") != nullptr);
+  return disabled;
+}
+
 /* Ensure texture bindings are correct and up to date for current draw call.
  * We will iterate through all texture bindings on the context and determine if any of the
  * active slots match those in our shader interface. If so, textures will be bound. */
@@ -794,6 +814,7 @@ static void ensure_texture_bindings(MTLContext &ctx,
                                     MTLShader &shader,
                                     CommandEncoderT enc,
                                     MTLBindingCache<CommandEncoderT> &bindings,
+                                    MTLBindingDirtyCache &dirty_cache,
                                     id<MTLFunction> mtl_function,
                                     uint16_t stage_ima_mask = uint16_t(-1),
                                     uint64_t stage_tex_mask = uint64_t(-1))
@@ -804,7 +825,16 @@ static void ensure_texture_bindings(MTLContext &ctx,
     return;
   }
 
-  /* TODO(fclem): Dirty binding tracking optimization. */
+  const bool cache_disabled = metal_binding_cache_disabled();
+  const uint64_t generation = ctx.main_command_buffer.encoder_generation();
+
+  /* Image bindings: conservative dirty tracking against `dirty_cache.image_cache` (per-slot,
+   * per-pipeline-stage -- see MTLBindingDirtyCache). A slot is skipped only when the exact same
+   * Metal texture handle was already bound to it within the current command encoder generation.
+   * NOTE: Sampler/texture bindings below (`bind_sampler` loop) are explicitly excluded from this
+   * optimization this round -- they remain unconditionally dirty (see MTLBindingDirtyCache doc
+   * comment); do not extend the mask logic below to that loop without addressing the
+   * argument-buffer sampler path. */
   uint16_t dirty_image_mask = ~uint16_t(0u);
   uint64_t dirty_sampler_mask = ~uint64_t(0u);
 
@@ -828,6 +858,19 @@ static void ensure_texture_bindings(MTLContext &ctx,
      * to bind the source texture resource to retain image write access. */
     id<MTLTexture> tex = gpu_tex->has_custom_swizzle() ? gpu_tex->get_metal_handle_base() :
                                                          gpu_tex->get_metal_handle();
+
+    if (!cache_disabled) {
+      MTLResourceBindingCacheEntry &entry = dirty_cache.image_cache[slot];
+      if (entry.generation == generation && entry.resource == (const void *)tex) {
+        /* Already resident in this encoder's argument table from an earlier bind this
+         * generation -- skip. Atomic workaround buffer binding below is also skipped: it is a
+         * function of `gpu_tex`/`shader_interface` alone, which are unchanged on a cache hit. */
+        continue;
+      }
+      entry.resource = (const void *)tex;
+      entry.generation = generation;
+    }
+
     bindings.bind_texture(enc, tex, MTL_IMAGE_SLOT_OFFSET + slot);
     if (shader_interface.use_texture_atomic() && (gpu_tex->usage_get() & GPU_TEXTURE_USAGE_ATOMIC))
     {
@@ -919,22 +962,37 @@ static void ensure_buffer_bindings(MTLContext &ctx,
                                    MTLShader &shader,
                                    CommandEncoderT enc,
                                    MTLBindingCache<CommandEncoderT> &bindings,
+                                   MTLBindingDirtyCache &dirty_cache,
                                    uint32_t stage_buf_mask = uint32_t(-1))
 {
   MTLShaderInterface &shader_interface = shader.get_interface();
 
-  /* TODO(fclem): Dirty binding tracking optimization. */
-  uint32_t dirty_ubo_mask = ~uint32_t(0u);
-  uint32_t dirty_ssbo_mask = ~uint32_t(0u);
+  /* Conservative dirty tracking against `dirty_cache.ubo_cache`/`ssbo_cache` (per-slot,
+   * per-pipeline-stage). A slot is skipped only when the exact same underlying id<MTLBuffer> --
+   * not merely the same gpu::MTLUniformBuf/MTLStorageBuf wrapper -- was already bound to it
+   * within the current command encoder generation, so a buffer reallocation behind an unchanged
+   * wrapper (e.g. MTLUniformBuf::update()/clear_to_zero() re-allocating storage) is always
+   * detected as a miss. */
+  const bool cache_disabled = metal_binding_cache_disabled();
+  const uint64_t generation = ctx.main_command_buffer.encoder_generation();
 
-  uint32_t dirty_enabled_ubo_mask = shader_interface.enabled_ubo_mask_ & dirty_ubo_mask;
-  uint32_t dirty_enabled_ssbo_mask = shader_interface.enabled_ssbo_mask_ & dirty_ssbo_mask;
-
-  uint32_t bind_ubo = dirty_enabled_ubo_mask & (stage_buf_mask >> MTL_UBO_SLOT_OFFSET);
+  uint32_t bind_ubo = shader_interface.enabled_ubo_mask_ & (stage_buf_mask >> MTL_UBO_SLOT_OFFSET);
   for (const uint slot : bits::iter_1_indices(bind_ubo)) {
     MTLUniformBufferBinding &bind = ctx.pipeline_state.ubo_bindings[slot];
     if (bind.ubo) {
-      bindings.bind_buffer(enc, bind.ubo->get_metal_buffer(), 0, MTL_UBO_SLOT_OFFSET + slot);
+      id<MTLBuffer> mtl_buf = bind.ubo->get_metal_buffer();
+      if (!cache_disabled) {
+        MTLResourceBindingCacheEntry &entry = dirty_cache.ubo_cache[slot];
+        if (entry.generation == generation && entry.resource == (const void *)mtl_buf &&
+            entry.key == 0)
+        {
+          continue;
+        }
+        entry.resource = (const void *)mtl_buf;
+        entry.key = 0;
+        entry.generation = generation;
+      }
+      bindings.bind_buffer(enc, mtl_buf, 0, MTL_UBO_SLOT_OFFSET + slot);
     }
     else {
       const int name_ofs = shader_interface.ubo_get(slot)->name_offset;
@@ -945,11 +1003,24 @@ static void ensure_buffer_bindings(MTLContext &ctx,
     }
   }
 
-  uint32_t bind_ssbo = dirty_enabled_ssbo_mask & (stage_buf_mask >> MTL_SSBO_SLOT_OFFSET);
+  uint32_t bind_ssbo = shader_interface.enabled_ssbo_mask_ &
+                       (stage_buf_mask >> MTL_SSBO_SLOT_OFFSET);
   for (const uint slot : bits::iter_1_indices(bind_ssbo)) {
     MTLStorageBufferBinding &bind = ctx.pipeline_state.ssbo_bindings[slot];
     if (bind.ssbo) {
-      bindings.bind_buffer(enc, bind.ssbo->get_metal_buffer(), 0, MTL_SSBO_SLOT_OFFSET + slot);
+      id<MTLBuffer> mtl_buf = bind.ssbo->get_metal_buffer();
+      if (!cache_disabled) {
+        MTLResourceBindingCacheEntry &entry = dirty_cache.ssbo_cache[slot];
+        if (entry.generation == generation && entry.resource == (const void *)mtl_buf &&
+            entry.key == 0)
+        {
+          continue;
+        }
+        entry.resource = (const void *)mtl_buf;
+        entry.key = 0;
+        entry.generation = generation;
+      }
+      bindings.bind_buffer(enc, mtl_buf, 0, MTL_SSBO_SLOT_OFFSET + slot);
     }
     else {
       const int name_ofs = shader_interface.ssbo_get(slot)->name_offset;
@@ -1240,6 +1311,7 @@ bool MTLContext::ensure_render_pipeline_state(MTLPrimitiveType mtl_prim_type)
                           *shader,
                           vert_rec,
                           rps.vertex_bindings,
+                          rps.vertex_dirty_cache,
                           psi->vert,
                           psi->used_ima_vert_mask,
                           psi->used_tex_vert_mask);
@@ -1247,11 +1319,22 @@ bool MTLContext::ensure_render_pipeline_state(MTLPrimitiveType mtl_prim_type)
                           *shader,
                           frag_rec,
                           rps.fragment_bindings,
+                          rps.fragment_dirty_cache,
                           psi->frag,
                           psi->used_ima_frag_mask,
                           psi->used_tex_frag_mask);
-  ensure_buffer_bindings(*this, *shader, vert_rec, rps.vertex_bindings, psi->used_buf_vert_mask);
-  ensure_buffer_bindings(*this, *shader, frag_rec, rps.fragment_bindings, psi->used_buf_frag_mask);
+  ensure_buffer_bindings(*this,
+                         *shader,
+                         vert_rec,
+                         rps.vertex_bindings,
+                         rps.vertex_dirty_cache,
+                         psi->used_buf_vert_mask);
+  ensure_buffer_bindings(*this,
+                         *shader,
+                         frag_rec,
+                         rps.fragment_bindings,
+                         rps.fragment_dirty_cache,
+                         psi->used_buf_frag_mask);
   ensure_acceleration_structure_bindings(*this, *shader, vert_rec);
   ensure_acceleration_structure_bindings(*this, *shader, frag_rec);
   if (pc_buf && pc_buf->is_dirty()) {
@@ -1586,8 +1669,13 @@ void MTLContext::compute_dispatch(int groups_x_len, int groups_y_len, int groups
 
   /** Ensure resource bindings. */
   MTLComputeCommandEncoder comp_rec{compute_encoder};
-  ensure_texture_bindings(*this, *shader, comp_rec, cs.compute_bindings, pipe_state_inst->compute);
-  ensure_buffer_bindings(*this, *shader, comp_rec, cs.compute_bindings);
+  ensure_texture_bindings(*this,
+                          *shader,
+                          comp_rec,
+                          cs.compute_bindings,
+                          cs.compute_dirty_cache,
+                          pipe_state_inst->compute);
+  ensure_buffer_bindings(*this, *shader, comp_rec, cs.compute_bindings, cs.compute_dirty_cache);
   ensure_acceleration_structure_bindings(*this, *shader, comp_rec);
   if (pc_buf && pc_buf->is_dirty()) {
     ensure_push_constant(*this, *shader, comp_rec, cs.compute_bindings);
@@ -1656,8 +1744,13 @@ void MTLContext::compute_dispatch_indirect(StorageBuf *indirect_buf)
 
   /** Ensure resource bindings. */
   MTLComputeCommandEncoder comp_rec{compute_encoder};
-  ensure_texture_bindings(*this, *shader, comp_rec, cs.compute_bindings, pipe_state_inst->compute);
-  ensure_buffer_bindings(*this, *shader, comp_rec, cs.compute_bindings);
+  ensure_texture_bindings(*this,
+                          *shader,
+                          comp_rec,
+                          cs.compute_bindings,
+                          cs.compute_dirty_cache,
+                          pipe_state_inst->compute);
+  ensure_buffer_bindings(*this, *shader, comp_rec, cs.compute_bindings, cs.compute_dirty_cache);
   ensure_acceleration_structure_bindings(*this, *shader, comp_rec);
   if (pc_buf && pc_buf->is_dirty()) {
     ensure_push_constant(*this, *shader, comp_rec, cs.compute_bindings);
