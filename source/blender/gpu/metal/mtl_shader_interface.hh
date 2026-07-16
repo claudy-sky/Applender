@@ -87,6 +87,11 @@ class MTLShaderInterface : public ShaderInterface {
   int image_names_offsets_[MTL_MAX_IMAGE_SLOTS];
   int sampler_names_offsets_[MTL_MAX_SAMPLER_SLOTS];
 
+  /* Acceleration structure slots (ray queries). Maps each create-info slot to the Metal buffer
+   * bind index assigned by `mtl_acceleration_structure_buffer_index`. -1 if unused. */
+  int accel_struct_buffer_index_[MTL_MAX_ACCELERATION_STRUCTURE_SLOTS];
+  uint32_t enabled_accel_struct_mask_ = 0;
+
   /* Debug. */
   char name[256];
 
@@ -140,6 +145,17 @@ class MTLShaderInterface : public ShaderInterface {
   const char *sampler_name_get(int slot) const
   {
     return name_at_offset(sampler_names_offsets_[slot]);
+  }
+
+  uint32_t enabled_accel_struct_mask() const
+  {
+    return enabled_accel_struct_mask_;
+  }
+
+  int accel_struct_buffer_index_get(int slot) const
+  {
+    BLI_assert(slot >= 0 && slot < MTL_MAX_ACCELERATION_STRUCTURE_SLOTS);
+    return accel_struct_buffer_index_[slot];
   }
 
   id<MTLArgumentEncoder> ensure_argument_encoder(id<MTLFunction> mtl_function);

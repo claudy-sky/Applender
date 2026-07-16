@@ -20,6 +20,7 @@
 #include "mtl_immediate.hh"
 #include "mtl_index_buffer.hh"
 #include "mtl_query.hh"
+#include "mtl_ray_tracing.hh"
 #include "mtl_shader.hh"
 #include "mtl_storage_buffer.hh"
 #include "mtl_texture_pool.hh"
@@ -120,6 +121,18 @@ StorageBuf *MTLBackend::storagebuf_alloc(size_t size, GPUUsageType usage, const 
 VertBuf *MTLBackend::vertbuf_alloc()
 {
   return new MTLVertBuf();
+}
+
+TopLevelAS *MTLBackend::tlas_alloc(const char *name)
+{
+  BLI_assert(MTLBackend::capabilities.supports_ray_tracing);
+  return new MTLTopLevelAS(name);
+}
+
+BottomLevelAS *MTLBackend::blas_alloc(const char *name)
+{
+  BLI_assert(MTLBackend::capabilities.supports_ray_tracing);
+  return new MTLBottomLevelAS(name);
 }
 
 void MTLBackend::render_begin()
@@ -481,6 +494,20 @@ void MTLBackend::capabilities_init(MTLContext *ctx)
   }
 #endif
 
+  /* Hardware ray tracing (acceleration structures + ray queries).
+   * Ray queries require Metal 2.4 (`intersection_query`), hence macOS 12.
+   * Experimental: requires the `BLENDER_METAL_RAYTRACING=1` environment variable opt-in.
+   * With the variable unset, behavior is unchanged and EEVEE keeps using screen tracing. */
+  MTLBackend::capabilities.supports_ray_tracing = false;
+#if defined(MAC_OS_VERSION_12_0)
+  if (@available(macOS 12.0, *)) {
+    static const char *raytracing_env = getenv("BLENDER_METAL_RAYTRACING");
+    const bool raytracing_opt_in = raytracing_env && (atoi(raytracing_env) != 0);
+    MTLBackend::capabilities.supports_ray_tracing = raytracing_opt_in &&
+                                                    [device supportsRaytracing];
+  }
+#endif
+
   /** Identify support for tile inputs. */
   const bool is_tile_based_arch = (GPU_platform_architecture() == GPU_ARCHITECTURE_TBDR);
   if (is_tile_based_arch) {
@@ -526,6 +553,8 @@ void MTLBackend::capabilities_init(MTLContext *ctx)
   GCaps.hdr_viewport_support = true;
 
   GCaps.geometry_shader_support = false;
+
+  GCaps.ray_query_support = MTLBackend::capabilities.supports_ray_tracing;
 
   /* Compile shaders on performance cores but leave one free so UI is still responsive.
    * Also respect command line option to reduce number of threads. */
@@ -576,6 +605,8 @@ void MTLBackend::capabilities_init(MTLContext *ctx)
     MTLBackend::capabilities.supports_texture_gather = false;
     MTLBackend::capabilities.supports_texture_atomics = false;
     MTLBackend::capabilities.supports_native_tile_inputs = false;
+    MTLBackend::capabilities.supports_ray_tracing = false;
+    GCaps.ray_query_support = false;
     GCaps.texture_pool_workaround = true;
   }
 

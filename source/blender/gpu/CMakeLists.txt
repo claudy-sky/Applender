@@ -202,6 +202,7 @@ set(METAL_SRC
   metal/mtl_memory.mm
   metal/mtl_push_constant.cc
   metal/mtl_query.mm
+  metal/mtl_ray_tracing.mm
   metal/mtl_shader.mm
   metal/mtl_shader_generate.cc
   metal/mtl_shader_interface.mm
@@ -229,6 +230,7 @@ set(METAL_SRC
   metal/mtl_pso_descriptor_state.hh
   metal/mtl_push_constant.hh
   metal/mtl_query.hh
+  metal/mtl_ray_tracing.hh
   metal/mtl_shader.hh
   metal/mtl_shader_generate.hh
   metal/mtl_shader_interface.hh

@@ -2,6 +2,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
+#include <algorithm>
 #include <fmt/format.h>
 #include <sstream>
 #include <string>
@@ -700,6 +701,47 @@ static void generate_texture(GeneratedStreams &generated,
   }
 }
 
+static void generate_acceleration_structure(GeneratedStreams &generated,
+                                            StringRefNull name,
+                                            const int buffer_index)
+{
+  if (buffer_index < 0) {
+    /* No free buffer binding slot left for the acceleration structure. Emit a marker that fails
+     * MSL compilation with a readable message instead of producing a corrupt binding table. */
+    BLI_assert_msg(0, "No free buffer binding slot left for acceleration structure");
+    auto &out = generated.entry_point_parameters;
+    out << Sep() << "MTL_ERROR_no_free_buffer_slot_for_acceleration_structure " << name;
+    return;
+  }
+  {
+    /* Member definition for global access. `accelerationStructureEXT` is defined by the ray query
+     * prelude (see `generate_ray_query_prelude`). */
+    auto &out = generated.wrapper_class_members;
+    out << "  const accelerationStructureEXT " << name << ";\n";
+  }
+  {
+    /* Constructor parameters. */
+    auto &out = generated.wrapper_constructor_parameters;
+    out << Sep() << "accelerationStructureEXT " << name;
+  }
+  {
+    /* Constructor assignments. */
+    auto &out = generated.wrapper_constructor_assign;
+    out << Sep() << name << "(" << name << ")";
+  }
+  {
+    /* Constructor arguments. */
+    auto &out = generated.wrapper_instance_init;
+    out << Sep() << name;
+  }
+  {
+    /* Entry point arguments. */
+    auto &out = generated.entry_point_parameters;
+    out << Sep() << "accelerationStructureEXT " << name;
+    out << " [[buffer(" << buffer_index << ")]]";
+  }
+}
+
 static void generate_resource(GeneratedStreams &generated,
                               const ShaderCreateInfo::Resource &res,
                               const ShaderStage stage,
@@ -743,7 +785,9 @@ static void generate_resource(GeneratedStreams &generated,
                       stage);
       break;
     case ShaderCreateInfo::Resource::BindType::ACCELERATION_STRUCTURE:
-      BLI_assert_unreachable();
+      generate_acceleration_structure(generated,
+                                      res.acceleration_structure.name,
+                                      mtl_acceleration_structure_buffer_index(info, res.slot));
       break;
   }
 }
@@ -814,12 +858,209 @@ static void generate_sampler_argument_buffer(GeneratedStreams &generated, int sa
   }
 }
 
+/**
+ * MSL implementation of the `GLSL_EXT_ray_query` API used by the shared shader sources
+ * (see `gpu_shader_cxx_builtin.hh` for the interface contract).
+ * Requires MSL 2.4 (`metal::raytracing::intersection_query`), see `get_compile_options`.
+ *
+ * NOTE: Kept free of comments as generated sources go through `Shader::run_preprocessor`
+ * which expects comment-free input.
+ */
+static void generate_ray_query_prelude(GeneratedStreams &generated)
+{
+  auto &out = generated.wrapper_class_prefix;
+  out << R"msl(
+using accelerationStructureEXT =
+    metal::raytracing::acceleration_structure<metal::raytracing::instancing>;
+
+struct rayQueryEXT {
+  metal::raytracing::intersection_query<metal::raytracing::instancing,
+                                        metal::raytracing::triangle_data>
+      mtl_query;
+  uint mtl_ray_flags;
+};
+
+constant uint gl_RayFlagsNoneEXT = 0x00u;
+constant uint gl_RayFlagsOpaqueEXT = 0x01u;
+constant uint gl_RayFlagsNoOpaqueEXT = 0x02u;
+constant uint gl_RayFlagsTerminateOnFirstHitEXT = 0x04u;
+constant uint gl_RayFlagsSkipClosestHitShaderEXT = 0x08u;
+constant uint gl_RayFlagsCullBackFacingTrianglesEXT = 0x10u;
+constant uint gl_RayFlagsCullFrontFacingTrianglesEXT = 0x20u;
+constant uint gl_RayFlagsCullOpaqueEXT = 0x40u;
+constant uint gl_RayFlagsCullNoOpaqueEXT = 0x80u;
+
+constant uint gl_RayQueryCommittedIntersectionNoneEXT = 0u;
+constant uint gl_RayQueryCommittedIntersectionTriangleEXT = 1u;
+constant uint gl_RayQueryCommittedIntersectionGeneratedEXT = 2u;
+constant uint gl_RayQueryCandidateIntersectionTriangleEXT = 1u;
+constant uint gl_RayQueryCandidateIntersectionAABBEXT = 2u;
+
+inline void rayQueryInitializeEXT(thread rayQueryEXT &rq,
+                                  accelerationStructureEXT accel_struct,
+                                  uint ray_flags,
+                                  uint cull_mask,
+                                  float3 origin,
+                                  float t_min,
+                                  float3 direction,
+                                  float t_max)
+{
+  metal::raytracing::intersection_params params;
+  params.assume_geometry_type(metal::raytracing::geometry_type::triangle);
+  params.accept_any_intersection((ray_flags & gl_RayFlagsTerminateOnFirstHitEXT) != 0u);
+  params.force_opacity(((ray_flags & gl_RayFlagsOpaqueEXT) != 0u) ?
+                           metal::raytracing::forced_opacity::opaque :
+                       ((ray_flags & gl_RayFlagsNoOpaqueEXT) != 0u) ?
+                           metal::raytracing::forced_opacity::non_opaque :
+                           metal::raytracing::forced_opacity::none);
+  params.set_opacity_cull_mode(((ray_flags & gl_RayFlagsCullOpaqueEXT) != 0u) ?
+                                   metal::raytracing::opacity_cull_mode::opaque :
+                               ((ray_flags & gl_RayFlagsCullNoOpaqueEXT) != 0u) ?
+                                   metal::raytracing::opacity_cull_mode::non_opaque :
+                                   metal::raytracing::opacity_cull_mode::none);
+  params.set_triangle_cull_mode(((ray_flags & gl_RayFlagsCullBackFacingTrianglesEXT) != 0u) ?
+                                    metal::raytracing::triangle_cull_mode::back :
+                                ((ray_flags & gl_RayFlagsCullFrontFacingTrianglesEXT) != 0u) ?
+                                    metal::raytracing::triangle_cull_mode::front :
+                                    metal::raytracing::triangle_cull_mode::none);
+  rq.mtl_ray_flags = ray_flags;
+  rq.mtl_query.reset(metal::raytracing::ray(origin, direction, t_min, t_max),
+                     accel_struct,
+                     cull_mask,
+                     params);
+}
+inline bool rayQueryProceedEXT(thread rayQueryEXT &rq)
+{
+  return rq.mtl_query.next();
+}
+inline void rayQueryTerminateEXT(thread rayQueryEXT &rq)
+{
+  rq.mtl_query.abort();
+}
+inline void rayQueryConfirmIntersectionEXT(thread rayQueryEXT &rq)
+{
+  rq.mtl_query.commit_triangle_intersection();
+}
+inline void rayQueryGenerateIntersectionEXT(thread rayQueryEXT &rq, float hit_t)
+{
+  rq.mtl_query.commit_bounding_box_intersection(hit_t);
+}
+inline uint rayQueryGetIntersectionTypeEXT(thread rayQueryEXT &rq, bool committed)
+{
+  if (committed) {
+    switch (rq.mtl_query.get_committed_intersection_type()) {
+      case metal::raytracing::intersection_type::triangle:
+        return gl_RayQueryCommittedIntersectionTriangleEXT;
+      case metal::raytracing::intersection_type::bounding_box:
+        return gl_RayQueryCommittedIntersectionGeneratedEXT;
+      default:
+        return gl_RayQueryCommittedIntersectionNoneEXT;
+    }
+  }
+  switch (rq.mtl_query.get_candidate_intersection_type()) {
+    case metal::raytracing::intersection_type::triangle:
+      return gl_RayQueryCandidateIntersectionTriangleEXT;
+    case metal::raytracing::intersection_type::bounding_box:
+      return gl_RayQueryCandidateIntersectionAABBEXT;
+    default:
+      return 0u;
+  }
+}
+inline float rayQueryGetRayTMinEXT(thread rayQueryEXT &rq)
+{
+  return rq.mtl_query.get_ray_min_distance();
+}
+inline uint rayQueryGetRayFlagsEXT(thread rayQueryEXT &rq)
+{
+  return rq.mtl_ray_flags;
+}
+inline float3 rayQueryGetWorldRayOriginEXT(thread rayQueryEXT &rq)
+{
+  return rq.mtl_query.get_world_space_ray_origin();
+}
+inline float3 rayQueryGetWorldRayDirectionEXT(thread rayQueryEXT &rq)
+{
+  return rq.mtl_query.get_world_space_ray_direction();
+}
+inline float rayQueryGetIntersectionTEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_distance() :
+                     rq.mtl_query.get_candidate_triangle_distance();
+}
+inline uint rayQueryGetIntersectionInstanceCustomIndexEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_user_instance_id() :
+                     rq.mtl_query.get_candidate_user_instance_id();
+}
+inline uint rayQueryGetIntersectionInstanceIdEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_instance_id() :
+                     rq.mtl_query.get_candidate_instance_id();
+}
+inline uint rayQueryGetIntersectionInstanceShaderBindingTableRecordOffsetEXT(
+    thread rayQueryEXT &rq, bool committed)
+{
+  return 0u;
+}
+inline uint rayQueryGetIntersectionGeometryIndexEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_geometry_id() :
+                     rq.mtl_query.get_candidate_geometry_id();
+}
+inline uint rayQueryGetIntersectionPrimitiveIndexEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_primitive_id() :
+                     rq.mtl_query.get_candidate_primitive_id();
+}
+inline float2 rayQueryGetIntersectionBarycentricsEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_triangle_barycentric_coord() :
+                     rq.mtl_query.get_candidate_triangle_barycentric_coord();
+}
+inline bool rayQueryGetIntersectionFrontFaceEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return committed ? rq.mtl_query.is_committed_triangle_front_facing() :
+                     rq.mtl_query.is_candidate_triangle_front_facing();
+}
+inline bool rayQueryGetIntersectionCandidateAABBOpaqueEXT(thread rayQueryEXT &rq)
+{
+  return !rq.mtl_query.is_candidate_non_opaque_bounding_box();
+}
+inline metal::float4x3 rayQueryGetIntersectionObjectToWorldEXT(thread rayQueryEXT &rq,
+                                                               bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_object_to_world_transform() :
+                     rq.mtl_query.get_candidate_object_to_world_transform();
+}
+inline metal::float4x3 rayQueryGetIntersectionWorldToObjectEXT(thread rayQueryEXT &rq,
+                                                               bool committed)
+{
+  return committed ? rq.mtl_query.get_committed_world_to_object_transform() :
+                     rq.mtl_query.get_candidate_world_to_object_transform();
+}
+inline float3 rayQueryGetIntersectionObjectRayOriginEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return rayQueryGetIntersectionWorldToObjectEXT(rq, committed) *
+         float4(rq.mtl_query.get_world_space_ray_origin(), 1.0f);
+}
+inline float3 rayQueryGetIntersectionObjectRayDirectionEXT(thread rayQueryEXT &rq, bool committed)
+{
+  return rayQueryGetIntersectionWorldToObjectEXT(rq, committed) *
+         float4(rq.mtl_query.get_world_space_ray_direction(), 0.0f);
+}
+)msl";
+}
+
 void generate_resources(GeneratedStreams &generated,
                         const ShaderStage stage,
                         const ShaderCreateInfo &info)
 {
   const bool use_sampler_argument_buffer = bool(info.builtins_ &
                                                 BuiltinBits::USE_SAMPLER_ARG_BUFFER);
+
+  if (bool(info.builtins_ & BuiltinBits::RAY_QUERY)) {
+    generate_ray_query_prelude(generated);
+  }
 
   int specialization_constant_index = MTL_SPECIALIZATION_CONSTANT_OFFSET;
   for (const SpecializationConstant &sc : info.specialization_constants_) {
@@ -1450,8 +1691,10 @@ std::pair<std::string, std::string> generate_entry_point(const ShaderCreateInfo 
   return {prefix.str(), out.str()};
 }
 
-/* Return available buffer slots for vertex buffer bindings. */
-uint32_t available_buffer_slots(const ShaderCreateInfo &info)
+/* Return buffer slots not used by fixed-slot resources (UBO/SSBO/push-constants/sampler
+ * argument buffer). Acceleration structures are ignored: their slots are assigned from this
+ * mask (see `mtl_acceleration_structure_buffer_index`). */
+static uint32_t buffer_slots_ignoring_acceleration_structures(const ShaderCreateInfo &info)
 {
   uint32_t free_slots = ~((~0u) << 31u);
 
@@ -1465,9 +1708,7 @@ uint32_t available_buffer_slots(const ShaderCreateInfo &info)
         break;
       case ShaderCreateInfo::Resource::BindType::SAMPLER:
       case ShaderCreateInfo::Resource::BindType::IMAGE:
-        break;
       case ShaderCreateInfo::Resource::BindType::ACCELERATION_STRUCTURE:
-        BLI_assert_unreachable();
         break;
     };
   };
@@ -1490,6 +1731,57 @@ uint32_t available_buffer_slots(const ShaderCreateInfo &info)
     free_slots &= ~(1u << MTL_SAMPLER_ARGUMENT_BUFFER_SLOT);
   }
 
+  return free_slots;
+}
+
+/* Acceleration structure slots declared by the create info, in increasing slot order for a
+ * deterministic buffer index assignment. */
+static Vector<int, 4> acceleration_structure_slots(const ShaderCreateInfo &info)
+{
+  Vector<int, 4> slots;
+  auto gather = [&](Span<ShaderCreateInfo::Resource> resources) {
+    for (const ShaderCreateInfo::Resource &res : resources) {
+      if (res.bind_type == ShaderCreateInfo::Resource::BindType::ACCELERATION_STRUCTURE) {
+        slots.append(res.slot);
+      }
+    }
+  };
+  gather(info.pass_resources_);
+  gather(info.batch_resources_);
+  gather(info.geometry_resources_);
+  std::sort(slots.begin(), slots.end());
+  return slots;
+}
+
+int mtl_acceleration_structure_buffer_index(const ShaderCreateInfo &info, int as_slot)
+{
+  /* Assign the highest still-free buffer bindings, in increasing create-info slot order.
+   * High slots minimize clashes with vertex buffer packing which fills from the lowest free
+   * slot upwards. */
+  uint32_t free_slots = buffer_slots_ignoring_acceleration_structures(info);
+  for (const int slot : acceleration_structure_slots(info)) {
+    if (free_slots == 0u) {
+      return -1;
+    }
+    const int buffer_index = 31 - int(bitscan_reverse_uint(free_slots));
+    free_slots &= ~(1u << buffer_index);
+    if (slot == as_slot) {
+      return buffer_index;
+    }
+  }
+  return -1;
+}
+
+/* Return available buffer slots for vertex buffer bindings. */
+uint32_t available_buffer_slots(const ShaderCreateInfo &info)
+{
+  uint32_t free_slots = buffer_slots_ignoring_acceleration_structures(info);
+  for (const int slot : acceleration_structure_slots(info)) {
+    const int buffer_index = mtl_acceleration_structure_buffer_index(info, slot);
+    if (buffer_index >= 0) {
+      free_slots &= ~(1u << buffer_index);
+    }
+  }
   return free_slots;
 }
 
@@ -1531,9 +1823,7 @@ void patch_create_info_atomic_workaround(std::unique_ptr<PatchedShaderCreateInfo
         break;
       case ShaderCreateInfo::Resource::BindType::UNIFORM_BUFFER:
       case ShaderCreateInfo::Resource::BindType::STORAGE_BUFFER:
-        break;
       case ShaderCreateInfo::Resource::BindType::ACCELERATION_STRUCTURE:
-        BLI_assert_unreachable();
         break;
     }
   };

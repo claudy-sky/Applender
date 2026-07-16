@@ -207,7 +207,8 @@ std::string MTLShader::entry_point_name_get(const ShaderStage stage)
 
 /* Note: returns a retained object. */
 static ::MTLCompileOptions *get_compile_options(const bool use_subpass_input,
-                                                const bool use_texture_atomic)
+                                                const bool use_texture_atomic,
+                                                const bool use_ray_query)
 {
   ::MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
   options.languageVersion = MTLLanguageVersion2_2;
@@ -220,6 +221,15 @@ static ::MTLCompileOptions *get_compile_options(const bool use_subpass_input,
   if (use_subpass_input) {
     options.languageVersion = MTLLanguageVersion2_3;
   }
+#if defined(MAC_OS_VERSION_12_0)
+  if (@available(macOS 12.00, *)) {
+    /* Ray queries (`metal::raytracing::intersection_query`) require Metal 2.4.
+     * `GPU_ray_query_support()` is only reported on macOS 12+. */
+    if (use_ray_query) {
+      options.languageVersion = MTLLanguageVersion2_4;
+    }
+  }
+#endif
 #if defined(MAC_OS_VERSION_14_0)
   if (@available(macOS 14.00, *)) {
     /* Texture atomics require Metal 3.1. */
@@ -289,7 +299,9 @@ id<MTLLibrary> MTLShader::create_shader_library(const shader::ShaderCreateInfo &
 
   {
     ::MTLCompileOptions *options = get_compile_options(
-        !info.subpass_inputs_.is_empty(), bool(info.builtins_ & BuiltinBits::TEXTURE_ATOMIC));
+        !info.subpass_inputs_.is_empty(),
+        bool(info.builtins_ & BuiltinBits::TEXTURE_ATOMIC),
+        bool(info.builtins_ & BuiltinBits::RAY_QUERY));
 
     NSError *error = nullptr;
     id<MTLLibrary> library = [context_->device

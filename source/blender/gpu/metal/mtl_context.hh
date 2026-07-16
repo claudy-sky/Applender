@@ -50,6 +50,7 @@ class MTLContext;
 class MTLCommandBufferManager;
 class MTLUniformBuf;
 class MTLStorageBuf;
+class MTLTopLevelAS;
 
 /* Caching of resource bindings for active MTLRenderCommandEncoder.
  * In Metal, resource bindings are local to the MTLCommandEncoder,
@@ -372,6 +373,11 @@ struct MTLStorageBufferBinding {
   MTLStorageBuf *ssbo = nullptr;
 };
 
+struct MTLAccelerationStructureBinding {
+  bool bound = false;
+  MTLTopLevelAS *tlas = nullptr;
+};
+
 struct MTLContextGlobalShaderPipelineState {
   /* Whether the pipeline state has been modified since application.
    * `dirty_flags` is a bitmask of the types of state which have been updated.
@@ -389,6 +395,9 @@ struct MTLContextGlobalShaderPipelineState {
   std::array<MTLUniformBufferBinding, MTL_MAX_UBO> ubo_bindings = {};
   /* Storage buffer. */
   std::array<MTLStorageBufferBinding, MTL_MAX_SSBO> ssbo_bindings = {};
+  /* Acceleration structures (ray queries). */
+  std::array<MTLAccelerationStructureBinding, MTL_MAX_ACCELERATION_STRUCTURE_SLOTS>
+      accel_struct_bindings = {};
   /* Context Texture bindings. */
   std::array<MTLTextureBinding, MTL_MAX_SAMPLER_SLOTS> texture_bindings = {};
   std::array<MTLSamplerBinding, MTL_MAX_SAMPLER_SLOTS> sampler_bindings = {};
@@ -548,6 +557,13 @@ class MTLCommandBufferManager {
                                                                   bool *r_new_pass);
   id<MTLBlitCommandEncoder> ensure_begin_blit_encoder();
   id<MTLComputeCommandEncoder> ensure_begin_compute_encoder();
+
+  /* Acceleration structure builds use a short-lived encoder: any active encoder is ended
+   * first and the returned encoder must be ended through
+   * `acceleration_structure_encoder_end` before any other encoder is begun. It is never
+   * tracked as the active encoder. */
+  id<MTLAccelerationStructureCommandEncoder> acceleration_structure_encoder_begin();
+  void acceleration_structure_encoder_end(id<MTLAccelerationStructureCommandEncoder> encoder);
 
   /* Workload Synchronization. */
   bool insert_memory_barrier(GPUBarrier barrier_bits,

@@ -27,6 +27,11 @@
  * | Push Constant Buffer        |      1 |   29..29   |
  * | Sampler Argument Buffer     |      1 |   30..30   |
  * +-----------------------------+--------+------------+
+ *
+ * Acceleration structures (ray queries) also occupy buffer bindings. They are assigned
+ * dynamically from the highest slots left unused by the shader's other resources
+ * (see `mtl_acceleration_structure_buffer_index`), and are excluded from the slots available
+ * for vertex buffer packing.
  */
 #define MTL_MAX_SSBO 16
 #define MTL_MAX_UBO 13
@@ -61,6 +66,14 @@ namespace blender::gpu {
 struct PatchedShaderCreateInfo;
 
 uint32_t available_buffer_slots(const shader::ShaderCreateInfo &info);
+
+/**
+ * Return the Metal buffer bind index used for the acceleration structure resource declared at
+ * `as_slot` in the create info. Deterministic for a given create info: the shader generator and
+ * the shader interface rely on it producing the same assignment. Returns -1 if no buffer slot is
+ * left for the acceleration structure.
+ */
+int mtl_acceleration_structure_buffer_index(const shader::ShaderCreateInfo &info, int as_slot);
 
 std::pair<std::string, std::string> generate_entry_point(const shader::ShaderCreateInfo &info,
                                                          const ShaderStage stage,
