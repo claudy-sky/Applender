@@ -8,8 +8,7 @@
 #  include "kernel/device/cpu/compat.h"
 #endif
 
-#if (!defined(__KERNEL_GPU__) || (defined(__KERNEL_ONEAPI__) && defined(WITH_EMBREE_GPU))) && \
-    defined(WITH_EMBREE)
+#if !defined(__KERNEL_GPU__) && defined(WITH_EMBREE)
 #  include <embree4/rtcore.h>
 #  include <embree4/rtcore_scene.h>
 #  define __EMBREE__
@@ -1389,12 +1388,8 @@ struct ccl_align(16) KernelData {
 #include "kernel/data_template.h"
 
   /* Device specific BVH. */
-#ifdef __KERNEL_OPTIX__
-  OptixTraversableHandle device_bvh;
-#elif defined __KERNEL_METALRT__
+#if   defined __KERNEL_METALRT__
   metalrt_as_type device_bvh;
-#elif defined(__KERNEL_HIPRT__)
-  void *device_bvh;
 #else
 #  ifdef __EMBREE__
 #    if RTC_VERSION >= 40400

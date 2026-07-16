@@ -292,13 +292,8 @@ ccl_device_extern bool rend_get_userdata(RSDeviceString name,
     ccl_private void **ptr_data = (ccl_private void **)data;
 
     if (name.val == DeviceStrings::u_colorsystem) {
-#ifdef __KERNEL_OPTIX__
-      *ptr_data = kernel_params.osl_colorsystem;
-      return true;
-#else
       (void)ptr_data;
       return false;
-#endif
     }
   }
   return false;

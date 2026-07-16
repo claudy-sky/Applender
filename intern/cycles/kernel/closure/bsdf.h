@@ -538,11 +538,7 @@ ccl_device_inline int bsdf_label(const KernelGlobals kg,
   return label;
 }
 
-#ifndef __KERNEL_CUDA__
 ccl_device
-#else
-ccl_device_inline
-#endif
     Spectrum
     bsdf_eval(KernelGlobals kg,
               ccl_private ShaderData *sd,

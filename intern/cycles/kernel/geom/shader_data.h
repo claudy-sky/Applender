@@ -38,11 +38,7 @@ ccl_device void shader_setup_object_transforms(KernelGlobals kg,
  * global memory as we write it to shader-data.
  *
  * HIP on Linux currently needs noinline to sidestep a probable compiler bug. */
-#ifdef __KERNEL_HIP__
-ccl_device_noinline
-#else
 ccl_device_inline
-#endif
     void
     shader_setup_from_ray(KernelGlobals kg,
                           ccl_private ShaderData *ccl_restrict sd,

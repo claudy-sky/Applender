@@ -42,42 +42,26 @@ enum IntersectionTest : uint {
 /* Special tricks to subclass payload.
  * The issue here is Metal does not support subclassing, but HIP-RT had performance issues with
  * composition in the past (see !136823). */
-#if defined(__KERNEL_HIPRT__)
-#  define BVH_PAYLOAD_SUBCLASS(cls, base_cls) struct cls : base_cls
-#  define BVH_PAYLOAD_SUBCLASS_DEFINE(base_cls)
-#  define BVH_PAYLOAD_BASE(obj) (obj)
-#else
 #  define BVH_PAYLOAD_SUBCLASS(cls, base_cls) struct cls
 #  define BVH_PAYLOAD_SUBCLASS_DEFINE(base_cls) base_cls base;
 #  define BVH_PAYLOAD_BASE(obj) ((obj).base)
-#endif
 
 struct BVHPayload {
   /* In OptiX, self-intersection information and ray visibility are passed via Ray's pointer as
    * extra payload data. */
-#if !defined(__KERNEL_OPTIX__)
   /* Primitives for the self-intersections. */
   RaySelfPrimitives ray_self;
 
   /* Ray visibility flags and time. */
   uint ray_visibility;
-#endif
 
-#if defined(__KERNEL_HIPRT__)
-  float ray_time;
-#endif
 };
 
 /* OptiX passes various parameters via registers to the tracing calls. No need to store duplicate
  * data for OptiX. This will essentially make it so BVHPayload contains data which is strictly
  * needed for intersection recording and for tracking curve transparency. */
-#if defined(__KERNEL_OPTIX__)
-#  define BVH_SHADOW_ALL_PAYLOAD_SUBCLASS(cls, base_cls) struct cls
-#  define BVH_SHADOW_ALL_PAYLOAD_SUBCLASS_DEFINE(base_cls)
-#else
 #  define BVH_SHADOW_ALL_PAYLOAD_SUBCLASS(cls, base_cls) BVH_PAYLOAD_SUBCLASS(cls, base_cls)
 #  define BVH_SHADOW_ALL_PAYLOAD_SUBCLASS_DEFINE(base_cls) BVH_PAYLOAD_SUBCLASS_DEFINE(base_cls)
-#endif
 
 BVH_SHADOW_ALL_PAYLOAD_SUBCLASS(BVHShadowAllPayload, BVHPayload)
 {
@@ -85,11 +69,7 @@ BVH_SHADOW_ALL_PAYLOAD_SUBCLASS(BVHShadowAllPayload, BVHPayload)
 
   /* Using uint16_t is slower on HIP, while it is similar performance but potentially lower memory
    * footprint on other backends. */
-#if defined(__KERNEL_HIPRT__)
-  using UIntType = uint;
-#else
   using UIntType = uint16_t;
-#endif
 
   IntegratorShadowState state;
 
@@ -189,7 +169,6 @@ ccl_device_forceinline bool bvh_shadow_all_anyhit_filter(
    *
    * NOTE: Currently, spatial splits are not used with OptiX, so there is no need to check whether
    * the intersection has been already recorded. */
-#  if !defined(__KERNEL_OPTIX__)
   if constexpr ((enabled_primitive_types & (PRIMITIVE_ALL & ~PRIMITIVE_CURVE)) != 0) {
     if ((isect.type & PRIMITIVE_CURVE) == 0) {
       if (intersection_skip_shadow_already_recoded(
@@ -199,7 +178,6 @@ ccl_device_forceinline bool bvh_shadow_all_anyhit_filter(
       }
     }
   }
-#  endif
 
   /* Only count transparent bounces, volume bounds bounces are counted when shading. */
   payload.num_transparent_hits += !(shader_flags & SD_HAS_ONLY_VOLUME);
