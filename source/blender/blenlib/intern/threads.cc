@@ -21,6 +21,7 @@
 
 /* for checking system threads - BLI_system_thread_count */
 #ifdef __APPLE__
+#  include <pthread/qos.h>
 #  include <sys/sysctl.h>
 #  include <sys/types.h>
 #else
@@ -286,6 +287,39 @@ void BLI_system_num_threads_override_set(int num)
 int BLI_system_num_threads_override_get()
 {
   return threads_override_num;
+}
+
+/* Thread Quality-of-Service */
+
+void BLI_thread_qos_set(const ThreadQoS qos)
+{
+#ifdef __APPLE__
+  static const bool disabled = getenv("BLENDER_THREAD_QOS_DISABLE") != nullptr;
+  if (disabled) {
+    return;
+  }
+  qos_class_t qos_class = QOS_CLASS_DEFAULT;
+  switch (qos) {
+    case BLI_THREAD_QOS_USER_INTERACTIVE:
+      qos_class = QOS_CLASS_USER_INTERACTIVE;
+      break;
+    case BLI_THREAD_QOS_USER_INITIATED:
+      qos_class = QOS_CLASS_USER_INITIATED;
+      break;
+    case BLI_THREAD_QOS_UTILITY:
+      qos_class = QOS_CLASS_UTILITY;
+      break;
+    case BLI_THREAD_QOS_BACKGROUND:
+      qos_class = QOS_CLASS_BACKGROUND;
+      break;
+  }
+  /* Relative priority 0 is the default rank within the class. Failure (EPERM
+   * on threads that already use an explicit `pthread_setschedparam` priority)
+   * only means the thread keeps its previous scheduling, so it is ignored. */
+  pthread_set_qos_class_self_np(qos_class, 0);
+#else
+  UNUSED_VARS(qos);
+#endif
 }
 
 /* Global Mutex Locks */

@@ -172,13 +172,35 @@ static void wm_job_main_thread_yield(wmJob *wm_job)
   BLI_ticket_mutex_lock(wm_job->main_thread_mutex);
 }
 
-static void wm_jobs_update_qos(const wmWindowManager *wm)
+/**
+ * Assign the macOS QoS class matching this job type to the current thread.
+ * QoS can only be set by the thread it applies to, so this must run on the
+ * job's worker thread, before `startjob` begins.
+ *
+ * Only job types whose interactivity is unambiguous are classified, all
+ * others keep the default (unspecified) QoS.
+ */
+static void wm_job_worker_qos_set(const wmJob *wm_job)
 {
-  /* TODO(Apple Silicon): No QoS API is currently wired up for macOS.
-   * A `pthread`/`qos_class_t`-based equivalent is expected to land in a later
-   * optimization stage; until then this is intentionally a no-op. */
-  UNUSED_VARS(wm);
+  switch (wm_job->job_type) {
+    /* Results the user is actively watching: compositor output and UI
+     * preview renders. Ranks below the USER_INTERACTIVE main thread. */
+    case WM_JOB_TYPE_COMPOSITE:
+    case WM_JOB_TYPE_RENDER_PREVIEW:
+      BLI_thread_qos_set(BLI_THREAD_QOS_USER_INITIATED);
+      break;
+    /* Deliberate background tasks, designed to run behind continued
+     * interaction. */
+    case WM_JOB_TYPE_CLIP_BUILD_PROXY:
+    case WM_JOB_TYPE_CLIP_PREFETCH:
+    case WM_JOB_TYPE_SEQ_BUILD_PROXY:
+      BLI_thread_qos_set(BLI_THREAD_QOS_UTILITY);
+      break;
+    default:
+      break;
+  }
 }
+
 /**
  * Finds if type or owner, compare for it, otherwise any matching job.
  */
@@ -236,8 +258,6 @@ wmJob *WM_jobs_get(wmWindowManager *wm,
     wm_job->worker_status.reports = MEM_new<ReportList>(__func__);
     BKE_reports_init(wm_job->worker_status.reports, RPT_STORE | RPT_PRINT);
     BKE_report_print_level_set(wm_job->worker_status.reports, RPT_WARNING);
-
-    wm_jobs_update_qos(wm);
   }
   /* Else: a running job, be careful. */
 
@@ -424,6 +444,8 @@ static void *do_job_thread(void *job_v)
 {
   wmJob *wm_job = static_cast<wmJob *>(job_v);
 
+  wm_job_worker_qos_set(wm_job);
+
   wm_job->startjob(wm_job->run_customdata, &wm_job->worker_status);
   wm_job->ready = true;
 
@@ -566,8 +588,6 @@ static void wm_job_free(wmWindowManager *wm, wmJob *wm_job)
   BKE_reports_free(wm_job->worker_status.reports);
   MEM_delete(wm_job->worker_status.reports);
   MEM_delete(wm_job);
-
-  wm_jobs_update_qos(wm);
 }
 
 /* Stop job, end thread, free data completely. */

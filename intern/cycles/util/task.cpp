@@ -7,6 +7,14 @@
 #include "util/log.h"
 #include "util/time.h"
 
+#ifdef __APPLE__
+#  include <cstdlib>
+
+#  include <pthread/qos.h>
+
+#  include <tbb/task_scheduler_observer.h>
+#endif
+
 CCL_NAMESPACE_BEGIN
 
 /* Task Pool */
@@ -52,6 +60,41 @@ bool TaskPool::canceled()
 
 /* Task Scheduler */
 
+#ifdef __APPLE__
+/* Classifies TBB worker threads as USER_INITIATED for the XNU scheduler:
+ * eligible for performance cores at full timeshare, while the
+ * USER_INTERACTIVE main (UI) thread still ranks ahead of them.
+ *
+ * NOTE: TBB workers are shared process-wide with the host application, and
+ * the class sticks to a worker once applied. */
+class QoSTaskSchedulerObserver : public tbb::task_scheduler_observer {
+ public:
+  QoSTaskSchedulerObserver()
+  {
+    observe(true);
+  }
+
+  ~QoSTaskSchedulerObserver() override
+  {
+    observe(false);
+  }
+
+  void on_scheduler_entry(bool is_worker) override
+  {
+    /* QoS only applies to the calling thread. Never re-classify non-worker
+     * threads that join to wait on tasks: that could demote the main thread
+     * below its USER_INTERACTIVE class. */
+    if (!is_worker) {
+      return;
+    }
+    /* Entry fires on every arena join, the call is idempotent. */
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+  }
+};
+
+static unique_ptr<QoSTaskSchedulerObserver> qos_observer;
+#endif
+
 thread_mutex TaskScheduler::mutex;
 int TaskScheduler::users = 0;
 int TaskScheduler::active_num_threads = 0;
@@ -66,6 +109,13 @@ void TaskScheduler::init(const int num_threads)
   if (users != 1) {
     return;
   }
+#ifdef __APPLE__
+  /* Shares the QoS kill-switch with `BLI_thread_qos_set` so one environment
+   * variable disables all QoS assignment for bisecting. */
+  if (getenv("BLENDER_THREAD_QOS_DISABLE") == nullptr) {
+    qos_observer = make_unique<QoSTaskSchedulerObserver>();
+  }
+#endif
   if (num_threads > 0) {
     /* Automatic number of threads. */
     LOG_INFO << "Overriding number of TBB threads to " << num_threads << ".";
@@ -83,6 +133,11 @@ void TaskScheduler::exit()
   const thread_scoped_lock lock(mutex);
   users--;
   if (users == 0) {
+#ifdef __APPLE__
+    /* Destruction stops observation, blocking until in-flight entry
+     * callbacks have completed. */
+    qos_observer.reset();
+#endif
     global_control.reset();
     active_num_threads = 0;
   }
