@@ -5,11 +5,6 @@
 #ifndef LIBMV_C_API_UTILDEFINES_H_
 #define LIBMV_C_API_UTILDEFINES_H_
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
-#  define __func__ __FUNCTION__
-#  define snprintf _snprintf
-#endif
-
 #ifdef WITH_LIBMV_GUARDED_ALLOC
 #  include "MEM_guardedalloc.h"
 #  if defined __GNUC__

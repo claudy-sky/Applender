@@ -16,9 +16,6 @@
 #include "BLI_math_base_c.hh"
 #include "BLI_math_rotation_c.hh"
 #include "BLI_string_utf8_symbols.hh"
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
 
 #include "BLT_date_string.hh"
 #include "BLT_lang.hh"
@@ -205,9 +202,7 @@ static const EnumPropertyItem rna_enum_key_insert_channels[] = {
 };
 
 static const EnumPropertyItem rna_enum_preference_gpu_backend_items[] = {
-    {GPU_BACKEND_OPENGL, "OPENGL", 0, "OpenGL", "Use OpenGL backend"},
     {GPU_BACKEND_METAL, "METAL", 0, "Metal", "Use Metal backend"},
-    {GPU_BACKEND_VULKAN, "VULKAN", 0, "Vulkan", "Use Vulkan backend"},
     {0, nullptr, 0, nullptr, nullptr},
 };
 static const EnumPropertyItem rna_enum_preference_gpu_preferred_device_items[] = {
@@ -922,13 +917,8 @@ static void rna_userdef_timecode_style_set(PointerRNA *ptr, int value)
 
 static int rna_UserDef_mouse_emulate_3_button_modifier_get(PointerRNA *ptr)
 {
-#  if !defined(WIN32)
   UserDef *userdef = static_cast<UserDef *>(ptr->data);
   return userdef->mouse_emulate_3_button_modifier;
-#  else
-  UNUSED_VARS(ptr);
-  return USER_EMU_MMB_MOD_ALT;
-#  endif
 }
 
 static const EnumPropertyItem *rna_UseDef_active_section_itemf(bContext * /*C*/,
@@ -1047,9 +1037,6 @@ static void rna_UserDef_viewport_lights_update(Main *bmain, Scene *scene, Pointe
 
 static bool rna_userdef_is_microsoft_store_install_get(PointerRNA * /*ptr*/)
 {
-#  ifdef WIN32
-  return BLI_windows_is_store_install();
-#  endif
   return false;
 }
 
@@ -1523,18 +1510,8 @@ static const EnumPropertyItem *rna_preference_gpu_backend_itemf(bContext * /*C*/
   EnumPropertyItem *result = nullptr;
   for (int i = 0; rna_enum_preference_gpu_backend_items[i].identifier != nullptr; i++) {
     const EnumPropertyItem *item = &rna_enum_preference_gpu_backend_items[i];
-#  ifndef WITH_OPENGL_BACKEND
-    if (item->value == GPU_BACKEND_OPENGL) {
-      continue;
-    }
-#  endif
 #  ifndef WITH_METAL_BACKEND
     if (item->value == GPU_BACKEND_METAL) {
-      continue;
-    }
-#  endif
-#  ifndef WITH_VULKAN_BACKEND
-    if (item->value == GPU_BACKEND_VULKAN) {
       continue;
     }
 #  endif

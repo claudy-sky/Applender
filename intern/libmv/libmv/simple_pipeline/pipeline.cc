@@ -30,10 +30,6 @@
 #include "libmv/simple_pipeline/resect.h"
 #include "libmv/simple_pipeline/tracks.h"
 
-#ifdef _MSC_VER
-#  define snprintf _snprintf
-#endif
-
 namespace libmv {
 namespace {
 

@@ -9,11 +9,7 @@
 
 #pragma once
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#else
-#  include <sys/types.h>
-#endif
+#include <sys/types.h>
 
 #include "BLI_compiler_attrs.hh"
 #include "BLI_utildefines.hh"

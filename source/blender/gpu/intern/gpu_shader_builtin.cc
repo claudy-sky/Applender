@@ -277,17 +277,6 @@ gpu::Shader *GPU_shader_get_builtin_shader(GPUBuiltinShader shader)
 
 void GPU_shader_builtin_warm_up()
 {
-  if ((G.debug & G_DEBUG_GPU) && (GPU_backend_get_type() == GPU_BACKEND_OPENGL)) {
-    /* On some system (Mesa OpenGL), doing this warm up seems to breaks something related to debug
-     * hooks and makes the Blender application hang. */
-    return;
-  }
-
-  if (GPU_use_subprocess_compilation() && (GPU_backend_get_type() == GPU_BACKEND_OPENGL)) {
-    /* The overhead of creating the subprocesses at this exact moment can create bubbles during the
-     * startup process. It is usually fast enough on OpenGL that we can skip it. */
-    return;
-  }
   /* Ordered by first usage in default startup screen.
    * Adding more to this list will delay the scheduling of engine shaders and increase time to
    * first pixel. */

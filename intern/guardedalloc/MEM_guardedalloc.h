@@ -371,15 +371,9 @@ inline T *MEM_new(const char *allocation_name, Args &&...args)
  */
 template<typename T> inline T *MEM_new_array(const size_t length, const char *allocation_name)
 {
-#  ifdef _MSC_VER
-  static_assert(
-      std::is_trivially_destructible_v<T>,
-      "For non-trivially copyable and destructible types, use higher level types like Vector.");
-#  else
   static_assert(
       mem_guarded::internal::is_trivial_after_construction<T>,
       "For non-trivially copyable and destructible types, use higher level types like Vector.");
-#  endif
   T *buffer = static_cast<T *>(
       MEM_new_array_uninitialized_aligned(length, sizeof(T), alignof(T), allocation_name));
   for (size_t i = 0; i < length; i++) {
@@ -549,12 +543,7 @@ template<typename T> struct MEM_smart_ptr_deleter {
  */
 template<typename T> inline T *MEM_new_zeroed(const char *allocation_name)
 {
-#  ifdef _MSC_VER
-  static_assert(std::is_trivially_constructible_v<T>,
-                "For non-trivial types, MEM_new must be used.");
-#  else
   static_assert(std::is_trivial_v<T>, "For non-trivial types, MEM_new must be used.");
-#  endif
   return static_cast<T *>(MEM_new_array_zeroed_aligned(1, sizeof(T), alignof(T), allocation_name));
 }
 
@@ -566,12 +555,7 @@ template<typename T> inline T *MEM_new_zeroed(const char *allocation_name)
 template<typename T>
 inline T *MEM_new_array_zeroed(const size_t length, const char *allocation_name)
 {
-#  ifdef _MSC_VER
-  static_assert(std::is_trivially_constructible_v<T>,
-                "For non-trivial types, MEM_new must be used.");
-#  else
   static_assert(std::is_trivial_v<T>, "For non-trivial types, MEM_new must be used.");
-#  endif
   return static_cast<T *>(
       MEM_new_array_zeroed_aligned(length, sizeof(T), alignof(T), allocation_name));
 }
@@ -589,12 +573,7 @@ inline T *MEM_new_array_zeroed(const size_t length, const char *allocation_name)
  */
 template<typename T> inline T *MEM_new_uninitialized(const char *allocation_name)
 {
-#  ifdef _MSC_VER
-  static_assert(std::is_trivially_constructible_v<T>,
-                "For non-trivial types, MEM_new must be used.");
-#  else
   static_assert(std::is_trivial_v<T>, "For non-trivial types, MEM_new must be used.");
-#  endif
   return static_cast<T *>(
       MEM_new_array_uninitialized_aligned(1, sizeof(T), alignof(T), allocation_name));
 }
@@ -608,12 +587,7 @@ template<typename T> inline T *MEM_new_uninitialized(const char *allocation_name
 template<typename T>
 inline T *MEM_new_array_uninitialized(const size_t length, const char *allocation_name)
 {
-#  ifdef _MSC_VER
-  static_assert(std::is_trivially_constructible_v<T>,
-                "For non-trivial types, MEM_new must be used.");
-#  else
   static_assert(std::is_trivial_v<T>, "For non-trivial types, MEM_new must be used.");
-#  endif
   return static_cast<T *>(
       MEM_new_array_uninitialized_aligned(length, sizeof(T), alignof(T), allocation_name));
 }
@@ -626,18 +600,10 @@ inline T *MEM_new_array_uninitialized(const size_t length, const char *allocatio
  * */
 template<typename T> inline T *MEM_dupalloc(const T *other)
 {
-#  ifdef _MSC_VER
-  /* TODO: Add back is_trivially_copyable_v condition, temporarily disabled
-   * because of build error on MSVC. */
-  static_assert(/*std::is_trivially_copyable_v<T> &&*/ std::is_trivially_destructible_v<T>,
-                "MEM_dupalloc can only duplicate types that are trivially copyable and "
-                "destructible, use MEM_new instead.");
-#  else
   static_assert(std::is_trivially_copyable_v<T> &&
                     mem_guarded::internal::is_trivial_after_construction<T>,
                 "MEM_dupalloc can only duplicate types that are trivially copyable and "
                 "destructible, use MEM_new instead.");
-#  endif
 
   static_assert(!std::is_void_v<T>);
 

@@ -573,7 +573,7 @@ void BPY_python_start(bContext *C, int argc, const char **argv)
       }
       else {
 /* Common enough to use the system Python on Linux/Unix, warn on other systems. */
-#  if defined(__APPLE__) || defined(_WIN32)
+#  if defined(__APPLE__)
         fprintf(stderr,
                 "Bundled Python not found and is expected on this platform "
                 "(the 'install' target may have not been built)\n");

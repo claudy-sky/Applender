@@ -83,17 +83,30 @@ ccl_device_inline float4 make_float4(const float f)
 
 ccl_device_inline float4 make_float4(const float3 a, const float b)
 {
+#ifdef __KERNEL_NEON_NATIVE__
+  /* float3 already carries x,y,z in lanes 0-2, only lane 3 needs replacing. */
+  return float4(vsetq_lane_f32(b, a.m128, 3));
+#else
   return make_float4(a.x, a.y, a.z, b);
+#endif
 }
 
 ccl_device_inline float4 make_float4(const float3 a)
 {
+#ifdef __KERNEL_NEON_NATIVE__
+  return float4(vsetq_lane_f32(1.0f, a.m128, 3));
+#else
   return make_float4(a.x, a.y, a.z, 1.0f);
+#endif
 }
 
 ccl_device_inline float4 make_homogeneous(const float3 a)
 {
+#ifdef __KERNEL_NEON_NATIVE__
+  return float4(vsetq_lane_f32(1.0f, a.m128, 3));
+#else
   return make_float4(a.x, a.y, a.z, 1.0f);
+#endif
 }
 
 ccl_device_inline float4 make_float4(const int4 i)
@@ -107,12 +120,25 @@ ccl_device_inline float4 make_float4(const int4 i)
 
 ccl_device_inline float3 make_float3(const float4 a)
 {
+#ifdef __KERNEL_NEON_NATIVE__
+  /* make_float3(x, y, z) stores zero in the unused lane 3, do the same here. */
+  return float3(vsetq_lane_f32(0.0f, a.m128, 3));
+#else
   return make_float3(a.x, a.y, a.z);
+#endif
 }
 
 ccl_device_inline int4 make_int4(const float4 f)
 {
-#ifdef __KERNEL_SSE__
+#ifdef __KERNEL_NEON_NATIVE__
+#  if defined(__ARM_FEATURE_FRINT)
+  /* Matches _mm_cvtps_epi32 exactly, including NaN/out-of-range -> INT_MIN. */
+  return int4(vreinterpretq_m128i_s32(vcvtq_s32_f32(vrnd32xq_f32(f.m128))));
+#  else
+  /* Round to nearest even; NaN -> 0 and overflow saturates, unlike SSE. */
+  return int4(vreinterpretq_m128i_s32(vcvtnq_s32_f32(f.m128)));
+#  endif
+#elif defined(__KERNEL_SSE__)
   return int4(_mm_cvtps_epi32(f.m128));
 #else
   return make_int4((int)f.x, (int)f.y, (int)f.z, (int)f.w);

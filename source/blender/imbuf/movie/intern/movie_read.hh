@@ -59,6 +59,14 @@ struct MovieReader {
   AVFrame *pFrameRGB = nullptr;
   AVFrame *pFrameDeinterlaced = nullptr;
   SwsContext *img_convert_ctx = nullptr;
+  /* Conversion context for frames downloaded from a hardware decoder: their
+   * pixel format (e.g. NV12) differs from the stream's software format that
+   * `img_convert_ctx` was created for. */
+  SwsContext *img_convert_ctx_hw = nullptr;
+  /* AVPixelFormat of downloaded hardware frames, AV_PIX_FMT_NONE (-1) when unused. */
+  int hwdec_transfer_format = -1;
+  /* Hardware (VideoToolbox) decoding is set up and did not fail so far. */
+  bool hwdec_active = false;
   int videoStream = 0;
 
   AVFrame *pFrame = nullptr;

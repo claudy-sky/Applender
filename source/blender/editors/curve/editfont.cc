@@ -740,11 +740,7 @@ static ui::Block *wm_block_insert_unicode_create(bContext *C, ARegion *region, v
 
   /* Buttons. */
 
-#ifdef _WIN32
-  const bool windows_layout = true;
-#else
   const bool windows_layout = false;
-#endif
 
   ui::Button *confirm = nullptr;
   ui::Button *cancel = nullptr;

@@ -51,20 +51,6 @@ string to_string(const float4 &v);
 string string_to_lower(const string &s);
 string string_remove_gpu_from_cpu_name(const string &s);
 
-/* Wide char strings are only used on Windows to deal with non-ASCII
- * characters in file names and such. No reason to use such strings
- * for something else at this moment.
- *
- * Please note that strings are expected to be in UTF8 code-page, and
- * if ANSI is needed then explicit conversion required.
- */
-#ifdef _WIN32
-using std::wstring;
-wstring string_to_wstring(const string &path);
-string string_from_wstring(const wstring &path);
-string string_to_ansi(const string &str);
-#endif
-
 /* Make a string from a size in bytes in human readable form. */
 string string_human_readable_size(const size_t size);
 /* Make a string from a unit-less quantity in human readable form. */

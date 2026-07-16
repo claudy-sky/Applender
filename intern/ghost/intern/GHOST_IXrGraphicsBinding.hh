@@ -19,26 +19,6 @@
 class GHOST_IXrGraphicsBinding {
  public:
   union {
-#if defined(WITH_GHOST_X11)
-#  if defined(WITH_OPENGL_BACKEND)
-    XrGraphicsBindingEGLMNDX egl;
-    XrGraphicsBindingOpenGLXlibKHR glx;
-#  endif
-#endif
-#if defined(WIN32)
-#  if defined(WITH_OPENGL_BACKEND)
-    XrGraphicsBindingOpenGLWin32KHR wgl;
-#  endif
-    XrGraphicsBindingD3D11KHR d3d11;
-#endif
-#if defined(WITH_GHOST_WAYLAND)
-#  if defined(WITH_OPENGL_BACKEND)
-    XrGraphicsBindingOpenGLWaylandKHR wl;
-#  endif
-#endif
-#ifdef WITH_VULKAN_BACKEND
-    XrGraphicsBindingVulkanKHR vk;
-#endif
 #ifdef WITH_METAL_BACKEND
     XrGraphicsBindingMetalKHR metal;
 #endif

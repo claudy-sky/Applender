@@ -657,16 +657,6 @@ using namespace blender::gpu::shader;
 #define GPU_SHADER_INTERFACE_END() ;
 #define GPU_SHADER_CREATE_END() ;
 
-#ifdef _MSC_VER
-/* Disable optimization for this function with MSVC. It does not like the fact
- * shaders info are declared in the same function (same basic block or not does
- * not change anything).
- * Since it is just a function called to register shaders (once),
- * the fact it's optimized or not does not matter, it's not on any hot
- * code path. */
-#  pragma optimize("", off)
-#endif
-
 /* Split functions to avoid stack overflow on windows. */
 static void init_compositor_infos()
 {
@@ -754,9 +744,6 @@ void gpu_shader_create_info_init()
   /* TEST */
   // gpu_shader_create_info_compile(nullptr);
 }
-#ifdef _MSC_VER
-#  pragma optimize("", on)
-#endif
 
 void gpu_shader_create_info_exit()
 {

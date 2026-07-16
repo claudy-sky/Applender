@@ -71,13 +71,7 @@
 #include <sstream>
 #include <xxhash.h>
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#  include "winsock2.h"
-#  include <io.h>
-#else
-#  include <unistd.h> /* FreeBSD, for write() and close(). */
-#endif
+#include <unistd.h> /* FreeBSD, for write() and close(). */
 
 #include <fmt/format.h>
 

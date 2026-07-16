@@ -14,9 +14,6 @@
 /* Note: include cmath before ffmpeg headers, since both of them define
  * M_PI and other macros. This is to avoid warnings about macro redefinition
  * if later including cmath (MSVC 2019). */
-#  if defined(_MSC_VER) && !defined(_USE_MATH_DEFINES)
-#    define _USE_MATH_DEFINES
-#  endif
 #  include <cmath>  // IWYU pragma: keep
 
 extern "C" {

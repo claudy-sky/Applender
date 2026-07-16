@@ -29,18 +29,6 @@ set(WITH_PYTHON_MODULE       ON  CACHE BOOL "" FORCE)
 # There is no point in copying python into Python.
 set(WITH_PYTHON_INSTALL      OFF CACHE BOOL "" FORCE)
 
-if(WIN32)
-  set(WITH_WINDOWS_BUNDLE_CRT  OFF CACHE BOOL "" FORCE)
-endif()
-
-
-# -----------------------------------------------------------------------------
-# Library Compatibility.
-
-# NOTE: JEMALLOC caused problems with `dlopen()`,
-# disabling for WITH_TBB_MALLOC_PROXY too, although we could investigate enabling it.
-set(WITH_TBB_MALLOC_PROXY        OFF CACHE BOOL "" FORCE)
-
 
 # -----------------------------------------------------------------------------
 # Application Support.
@@ -63,15 +51,7 @@ set(WITH_AUDASPACE           ON  CACHE BOOL "" FORCE)
 set(WITH_JACK                OFF CACHE BOOL "" FORCE)
 set(WITH_OPENAL              OFF CACHE BOOL "" FORCE)
 set(WITH_SDL_AUDIO           OFF CACHE BOOL "" FORCE)
-if(UNIX AND NOT APPLE)
-  set(WITH_PULSEAUDIO          OFF CACHE BOOL "" FORCE)
-endif()
-if(WIN32)
-  set(WITH_WASAPI              OFF CACHE BOOL "" FORCE)
-endif()
-if(APPLE)
-  set(WITH_COREAUDIO           OFF CACHE BOOL "" FORCE)
-endif()
+set(WITH_COREAUDIO           OFF CACHE BOOL "" FORCE)
 
 
 # -----------------------------------------------------------------------------
@@ -79,9 +59,7 @@ endif()
 
 # Other features which are not especially useful as a python module.
 set(WITH_INPUT_NDOF          OFF CACHE BOOL "" FORCE)
-if(WIN32 OR APPLE)
-  set(WITH_INPUT_IME           OFF CACHE BOOL "" FORCE)
-endif()
+set(WITH_INPUT_IME           OFF CACHE BOOL "" FORCE)
 
 
 # -----------------------------------------------------------------------------

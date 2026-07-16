@@ -139,13 +139,7 @@ float event_icon_offset(const int icon_id)
     MSWIN,
   } platform =
 
-#if defined(__APPLE__)
       MACOS
-#elif defined(_WIN32)
-      MSWIN
-#else
-      UNIX
-#endif
       ;
 
   if (ELEM(icon_id,
@@ -202,13 +196,7 @@ void icon_draw_rect_input(const float x,
     MSWIN,
   } platform =
 
-#if defined(__APPLE__)
       MACOS
-#elif defined(_WIN32)
-      MSWIN
-#else
-      UNIX
-#endif
       ;
 
   const float offset = event_icon_offset(icon_id);

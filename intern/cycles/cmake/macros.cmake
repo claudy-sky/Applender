@@ -126,22 +126,6 @@ function(cycles_external_libraries_append libraries)
       list(APPEND ${libraries} "opengl32")
     endif()
   endif()
-  if(UNIX AND NOT APPLE)
-    list(APPEND ${libraries} "-lm -lc -lutil")
-  endif()
-
-  # Compatibility libraries.
-  if(UNIX AND NOT APPLE)
-    if(CYCLES_STANDALONE_REPOSITORY)
-      list(APPEND ${libraries} extern_libc_compat)
-      # Hack to solve linking order issue where external libs depend
-      # on our compatibility lib.
-      list(APPEND ${libraries} $<TARGET_FILE:extern_libc_compat>)
-    else()
-      list(APPEND ${libraries} bf_intern_libc_compat)
-    endif()
-  endif()
-
   if(NOT CYCLES_STANDALONE_REPOSITORY)
     list(APPEND ${libraries} bf_intern_guardedalloc)
   endif()

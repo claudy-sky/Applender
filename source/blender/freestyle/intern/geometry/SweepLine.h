@@ -60,11 +60,6 @@ template<class Edge> class Intersection {
   MEM_CXX_CLASS_ALLOC_FUNCS("Freestyle:Intersection")
 };
 
-#ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4521)  // disable warning C4521: multiple copy constructors specified
-#endif
-
 template<class T, class Point> class Segment {
  public:
   Segment() {}
@@ -165,10 +160,6 @@ template<class T, class Point> class Segment {
 
   MEM_CXX_CLASS_ALLOC_FUNCS("Freestyle:Segment")
 };
-
-#ifdef _MSC_VER
-#  pragma warning(pop)
-#endif
 
 /** defines a binary function that can be overload by the user to specify at each condition the
  * intersection between 2 edges must be computed

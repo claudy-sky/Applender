@@ -18,10 +18,6 @@
 
 #  include "CLG_log.h"
 
-#  ifdef WIN32
-#    include "BLI_winstuff.hh"
-#  endif
-
 #  include "BLI_args.hh"
 #  include "BLI_dynstr.hh"
 #  include "BLI_fileops.hh"
@@ -101,7 +97,6 @@ struct BuildDefs {
   bool with_freestyle;
   bool with_libmv;
   bool with_opengl_backend;
-  bool with_renderdoc;
   bool with_input_ndof;
   bool with_vulkan_backend;
   bool with_xr_openxr;
@@ -122,9 +117,6 @@ static void build_defs_init(BuildDefs *build_defs, bool force_all)
 #  ifdef __APPLE__
   build_defs->apple = true;
 #  endif
-#  ifdef WIN32
-  build_defs->win32 = true;
-#  endif
 #  ifdef WITH_CYCLES
   build_defs->with_cycles = true;
 #  endif
@@ -139,9 +131,6 @@ static void build_defs_init(BuildDefs *build_defs, bool force_all)
 #  endif
 #  ifdef WITH_OPENGL_BACKEND
   build_defs->with_opengl_backend = true;
-#  endif
-#  ifdef WITH_RENDERDOC
-  build_defs->with_renderdoc = true;
 #  endif
 #  ifdef WITH_INPUT_NDOF
   build_defs->with_input_ndof = true;
@@ -448,28 +437,6 @@ fail:
  * (Python in particular) * to be initialized.
  * \{ */
 
-/* When the deferred argument is handled on Windows the `argv` will have been freed,
- * see `USE_WIN32_UNICODE_ARGS` in `creator.cc`. */
-
-#  ifdef WIN32
-static char **argv_duplicate(const char **argv, int argc)
-{
-  char **argv_copy = MEM_new_array_uninitialized<char *>(size_t(argc), __func__);
-  for (int i = 0; i < argc; i++) {
-    argv_copy[i] = BLI_strdup(argv[i]);
-  }
-  return argv_copy;
-}
-
-static void argv_free(char **argv, int argc)
-{
-  for (int i = 0; i < argc; i++) {
-    MEM_delete(argv[i]);
-  }
-  MEM_delete(argv);
-}
-#  endif /* !WIN32 */
-
 struct BA_ArgCallback_Deferred {
   BA_ArgCallback func;
   int argc;
@@ -493,9 +460,6 @@ static void main_arg_deferred_setup(BA_ArgCallback func, int argc, const char **
   d->argv = argv;
   d->data = data;
   d->exit_code = 0;
-#  ifdef WIN32
-  d->argv = const_cast<const char **>(argv_duplicate(d->argv, d->argc));
-#  endif
   app_state.main_arg_deferred = d;
 }
 
@@ -503,9 +467,6 @@ void main_arg_deferred_free()
 {
   BA_ArgCallback_Deferred *d = app_state.main_arg_deferred;
   app_state.main_arg_deferred = nullptr;
-#  ifdef WIN32
-  argv_free(const_cast<char **>(d->argv), d->argc);
-#  endif
   MEM_delete(d);
 }
 
@@ -777,9 +738,6 @@ static void print_help(bArgs *ba, bool all)
   BLI_args_print_arg_doc(ba, "--debug-gpu-shader-no-preprocessor");
   BLI_args_print_arg_doc(ba, "--debug-gpu-shader-no-dce");
   BLI_args_print_arg_doc(ba, "--debug-gpu-no-texture-pool");
-  if (defs.with_renderdoc) {
-    BLI_args_print_arg_doc(ba, "--debug-gpu-renderdoc");
-  }
   if (defs.with_vulkan_backend) {
     BLI_args_print_arg_doc(ba, "--debug-gpu-vulkan-local-read");
   }
@@ -1624,21 +1582,6 @@ static int arg_handle_debug_gpu_no_texture_pool_set(int /* argc */,
   return 0;
 }
 
-static const char arg_handle_debug_gpu_renderdoc_set_doc[] =
-    "\n"
-    "\tEnable RenderDoc integration for GPU frame grabbing and debugging.";
-static int arg_handle_debug_gpu_renderdoc_set(int /*argc*/,
-                                              const char ** /*argv*/,
-                                              void * /*data*/)
-{
-#  ifdef WITH_RENDERDOC
-  G.debug |= G_DEBUG_GPU_RENDERDOC | G_DEBUG_GPU | G_DEBUG_GPU_SHADER_DEBUG_INFO;
-#  else
-  BLI_assert_unreachable();
-#  endif
-  return 0;
-}
-
 static const char arg_handle_debug_gpu_shader_debug_info_set_doc[] =
     "\n"
     "\tEnable shader debug info generation (Vulkan only).";
@@ -2103,18 +2046,6 @@ static int arg_handle_start_with_console(int /*argc*/, const char ** /*argv*/, v
 static bool arg_handle_extension_registration(const bool do_register, const bool all_users)
 {
   /* Logic runs in #main_args_handle_registration. */
-#  ifdef WIN32
-  /* This process has been launched with the permissions needed
-   * to register or unregister, so just do it now and then exit. */
-  if (do_register) {
-    BLI_windows_register_blend_extension(all_users);
-  }
-  else {
-    BLI_windows_unregister_blend_extension(all_users);
-  }
-  TerminateProcess(GetCurrentProcess(), 0);
-  return true;
-#  else
   char *error_msg = nullptr;
   bool result = WM_platform_associate_set(do_register, all_users, &error_msg);
   if (error_msg) {
@@ -2122,7 +2053,6 @@ static bool arg_handle_extension_registration(const bool do_register, const bool
     MEM_delete(error_msg);
   }
   return result;
-#  endif
 }
 
 static const char arg_handle_register_extension_doc[] =
@@ -2133,14 +2063,7 @@ static int arg_handle_register_extension(int argc, const char **argv, void *data
   CLG_quiet_set(true);
   background_mode_set();
 
-#  if !(defined(WIN32) || defined(__APPLE__))
-  if (!main_arg_deferred_is_set()) {
-    main_arg_deferred_setup(arg_handle_register_extension, argc, argv, data);
-    return argc - 1;
-  }
-#  else
   UNUSED_VARS(argv, data);
-#  endif
   arg_handle_extension_registration(true, false);
   return argc - 1;
 }
@@ -2153,14 +2076,7 @@ static int arg_handle_register_extension_all(int argc, const char **argv, void *
   CLG_quiet_set(true);
   background_mode_set();
 
-#  if !(defined(WIN32) || defined(__APPLE__))
-  if (!main_arg_deferred_is_set()) {
-    main_arg_deferred_setup(arg_handle_register_extension_all, argc, argv, data);
-    return argc - 1;
-  }
-#  else
   UNUSED_VARS(argv, data);
-#  endif
   arg_handle_extension_registration(true, true);
   return argc - 1;
 }
@@ -2173,14 +2089,7 @@ static int arg_handle_unregister_extension(int argc, const char **argv, void *da
   CLG_quiet_set(true);
   background_mode_set();
 
-#  if !(defined(WIN32) || defined(__APPLE__))
-  if (!main_arg_deferred_is_set()) {
-    main_arg_deferred_setup(arg_handle_unregister_extension, argc, argv, data);
-    return argc - 1;
-  }
-#  else
   UNUSED_VARS(argc, argv, data);
-#  endif
   arg_handle_extension_registration(false, false);
   return 0;
 }
@@ -2193,14 +2102,7 @@ static int arg_handle_unregister_extension_all(int argc, const char **argv, void
   CLG_quiet_set(true);
   background_mode_set();
 
-#  if !(defined(WIN32) || defined(__APPLE__))
-  if (!main_arg_deferred_is_set()) {
-    main_arg_deferred_setup(arg_handle_unregister_extension_all, argc, argv, data);
-    return argc - 1;
-  }
-#  else
   UNUSED_VARS(argc, argv, data);
-#  endif
   arg_handle_extension_registration(false, true);
   return 0;
 }
@@ -2216,26 +2118,8 @@ static int arg_handle_qos_set(int argc, const char **argv, void * /*data*/)
 {
   const char *arg_id = "--qos";
   if (argc > 1) {
-#  ifdef _WIN32
-    QoSMode qos_mode;
-    if (STRCASEEQ(argv[1], "default")) {
-      qos_mode = QoSMode::DEFAULT;
-    }
-    else if (STRCASEEQ(argv[1], "high")) {
-      qos_mode = QoSMode::HIGH;
-    }
-    else if (STRCASEEQ(argv[1], "eco")) {
-      qos_mode = QoSMode::ECO;
-    }
-    else {
-      fprintf(stderr, "\nError: Invalid QoS level '%s %s'.\n", arg_id, argv[1]);
-      return 1;
-    }
-    BLI_windows_process_set_qos(qos_mode, QoSPrecedence::CMDLINE_ARG);
-#  else
     UNUSED_VARS(argv);
     fprintf(stderr, "\nError: '%s' is Windows only.\n", arg_id);
-#  endif
     return 1;
   }
   fprintf(stderr, "\nError: '%s' no args given.\n", arg_id);
@@ -3277,10 +3161,6 @@ void main_args_setup(bContext *C, bArgs *ba, bool all)
                nullptr);
   BLI_args_add(
       ba, nullptr, "--debug-gpu-shader-no-dce", CB(arg_handle_debug_gpu_shader_no_dce), nullptr);
-  if (defs.with_renderdoc) {
-    BLI_args_add(
-        ba, nullptr, "--debug-gpu-renderdoc", CB(arg_handle_debug_gpu_renderdoc_set), nullptr);
-  }
   BLI_args_add(ba,
                nullptr,
                "--debug-gpu-shader-debug-info",

@@ -24,20 +24,8 @@
 #endif
 
 /* For 'isatty' to check for color. */
-#if defined(__unix__) || defined(__APPLE__) || defined(__HAIKU__)
-#  include <sys/time.h>
-#  include <unistd.h>
-#endif
-
-#if defined(_MSC_VER)
-#  include <Windows.h>
-
-#  include <VersionHelpers.h> /* This needs to be included after Windows.h. */
-#  include <io.h>
-#  if !defined(ENABLE_VIRTUAL_TERMINAL_PROCESSING)
-#    define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
-#  endif
-#endif
+#include <sys/time.h>
+#include <unistd.h>
 
 /* For printing timestamp. */
 #define __STDC_FORMAT_MACROS
@@ -55,11 +43,7 @@
 #define STREQ(a, b) (strcmp(a, b) == 0)
 #define STREQLEN(a, b, n) (strncmp(a, b, n) == 0)
 
-#ifdef _WIN32
-#  define PATHSEP_CHAR '\\'
-#else
-#  define PATHSEP_CHAR '/'
-#endif
+#define PATHSEP_CHAR '/'
 
 /* -------------------------------------------------------------------- */
 /** \name Internal Types
@@ -296,9 +280,6 @@ enum eCLogColor {
 #define COLOR_LEN (COLOR_RESET + 1)
 
 static const char *clg_color_table[COLOR_LEN] = {nullptr};
-#ifdef _WIN32
-static DWORD clg_previous_console_mode = 0;
-#endif
 
 static void clg_color_table_init(bool use_color)
 {
@@ -469,13 +450,9 @@ static void clg_ctx_backtrace(CLogContext *ctx)
 static uint64_t clg_timestamp_ticks_get()
 {
   uint64_t tick;
-#if defined(_MSC_VER)
-  tick = GetTickCount64();
-#else
   struct timeval tv;
   gettimeofday(&tv, nullptr);
   tick = tv.tv_sec * 1000 + tv.tv_usec / 1000;
-#endif
   return tick;
 }
 
@@ -711,26 +688,7 @@ static void CLG_ctx_output_set(CLogContext *ctx, void *file_handle)
 {
   ctx->output_file = static_cast<FILE *>(file_handle);
   ctx->output = fileno(ctx->output_file);
-#if defined(__unix__) || defined(__APPLE__)
   ctx->use_color = isatty(ctx->output);
-#elif defined(WIN32)
-  /* As of Windows 10 build 18298 all the standard consoles supports color
-   * like the Linux Terminal do, but it needs to be turned on.
-   * To turn on colors we need to enable virtual terminal processing by passing the flag
-   * ENABLE_VIRTUAL_TERMINAL_PROCESSING into SetConsoleMode.
-   * If the system doesn't support virtual terminal processing it will fail silently and the flag
-   * will not be set. */
-
-  GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &clg_previous_console_mode);
-
-  ctx->use_color = 0;
-  if (IsWindows10OrGreater() && isatty(ctx->output)) {
-    DWORD mode = clg_previous_console_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    if (SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), mode)) {
-      ctx->use_color = 1;
-    }
-  }
-#endif
 }
 
 static void CLG_ctx_output_use_source_set(CLogContext *ctx, int value)
@@ -828,9 +786,6 @@ static CLogContext *CLG_ctx_init()
 
 static void CLG_ctx_free(CLogContext *ctx)
 {
-#if defined(WIN32)
-  SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), clg_previous_console_mode);
-#endif
   while (ctx->types != nullptr) {
     CLG_LogType *item = ctx->types;
     ctx->types = item->next;

@@ -4,10 +4,6 @@
 
 #include "opensubdiv_capi.hh"
 #include "opensubdiv/version.h"
-#ifdef _MSC_VER
-#  include <iso646.h>
-#endif
-
 void openSubdiv_init() {}
 
 void openSubdiv_cleanup() {}

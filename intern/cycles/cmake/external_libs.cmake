@@ -24,12 +24,3 @@ if(WITH_CYCLES_DEVICE_METAL)
     message(STATUS "Found Metal: ${METAL_LIBRARY}")
   endif()
 endif()
-
-###########################################################################
-# Embree SYCL (needed for linking to Embree when built with SYCL support)
-###########################################################################
-
-if(EMBREE_SYCL_SUPPORT)
-  find_package(SYCL)
-  find_package(LevelZero)
-endif()

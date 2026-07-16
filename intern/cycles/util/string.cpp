@@ -11,13 +11,6 @@
 #include "util/string.h"
 #include "util/types_float4.h"
 
-#ifdef _WIN32
-#  include "util/windows.h"
-#  ifndef vsnprintf
-#    define vsnprintf _vsnprintf
-#  endif
-#endif /* _WIN32 */
-
 CCL_NAMESPACE_BEGIN
 
 string string_printf(const char *format, ...)
@@ -236,46 +229,6 @@ string string_remove_gpu_from_cpu_name(const string &s)
 
   return s;
 }
-
-/* Wide char strings helpers for Windows. */
-
-#ifdef _WIN32
-
-wstring string_to_wstring(const string &str)
-{
-  const int length_wc = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), nullptr, 0);
-  wstring str_wc(length_wc, 0);
-  MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), &str_wc[0], length_wc);
-  return str_wc;
-}
-
-string string_from_wstring(const wstring &str)
-{
-  int length_mb = WideCharToMultiByte(
-      CP_UTF8, 0, str.c_str(), str.size(), nullptr, 0, nullptr, nullptr);
-  string str_mb(length_mb, 0);
-  WideCharToMultiByte(
-      CP_UTF8, 0, str.c_str(), str.size(), &str_mb[0], length_mb, nullptr, nullptr);
-  return str_mb;
-}
-
-string string_to_ansi(const string &str)
-{
-  const int length_wc = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), nullptr, 0);
-  wstring str_wc(length_wc, 0);
-  MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), &str_wc[0], length_wc);
-
-  int length_mb = WideCharToMultiByte(
-      CP_ACP, 0, str_wc.c_str(), str_wc.size(), nullptr, 0, nullptr, nullptr);
-
-  string str_mb(length_mb, 0);
-  WideCharToMultiByte(
-      CP_ACP, 0, str_wc.c_str(), str_wc.size(), &str_mb[0], length_mb, nullptr, nullptr);
-
-  return str_mb;
-}
-
-#endif /* _WIN32 */
 
 string string_human_readable_size(size_t size)
 {

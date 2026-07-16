@@ -15,9 +15,6 @@
 #include "DNA_space_types.h"
 
 #include "BLI_listbase.hh"
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
 #include "BLI_fileops.hh"
 #include "BLI_path_utils.hh"
 #include "BLI_string.hh"
@@ -1009,74 +1006,15 @@ static void PREFERENCES_OT_extension_url_drop(wmOperatorType *ot)
 
 static bool associate_blend_poll(bContext *C)
 {
-#ifdef WIN32
-  if (BLI_windows_is_store_install()) {
-    CTX_wm_operator_poll_msg_set(C, "Not available for Microsoft Store installations");
-    return false;
-  }
-  return true;
-#elif defined(__APPLE__)
   CTX_wm_operator_poll_msg_set(C, "Windows & Linux only operator");
   return false;
-#else
-  UNUSED_VARS(C);
-  return true;
-#endif
 }
-
-#if !defined(__APPLE__)
-static bool associate_blend(bool do_register, bool all_users, char **r_error_msg)
-{
-  const bool result = WM_platform_associate_set(do_register, all_users, r_error_msg);
-#  ifdef WIN32
-  if ((result == false) &&
-      /* For some reason the message box isn't shown in this case. */
-      (all_users == false))
-  {
-    const char *msg = do_register ? "Unable to register file association" :
-                                    "Unable to unregister file association";
-    MessageBox(0, msg, "Blender", MB_OK | MB_ICONERROR);
-  }
-#  endif /* !WIN32 */
-  return result;
-}
-#endif
 
 static wmOperatorStatus associate_blend_exec(bContext * /*C*/, wmOperator *op)
 {
-#ifdef __APPLE__
   UNUSED_VARS(op);
   BLI_assert_unreachable();
   return OPERATOR_CANCELLED;
-#else
-
-#  ifdef WIN32
-  if (BLI_windows_is_store_install()) {
-    BKE_report(
-        op->reports, RPT_ERROR, "Registration not possible from Microsoft Store installations");
-    return OPERATOR_CANCELLED;
-  }
-#  endif
-
-  const bool all_users = (U.uiflag & USER_REGISTER_ALL_USERS);
-  char *error_msg = nullptr;
-
-  WM_cursor_wait(true);
-  const bool success = associate_blend(true, all_users, &error_msg);
-  WM_cursor_wait(false);
-
-  if (!success) {
-    BKE_report(
-        op->reports, RPT_ERROR, error_msg ? error_msg : "Unable to register file association");
-    if (error_msg) {
-      MEM_delete(error_msg);
-    }
-    return OPERATOR_CANCELLED;
-  }
-  BLI_assert(error_msg == nullptr);
-  BKE_report(op->reports, RPT_INFO, "File association registered");
-  return OPERATOR_FINISHED;
-#endif /* !__APPLE__ */
 }
 
 static void PREFERENCES_OT_associate_blend(wmOperatorType *ot)
@@ -1093,38 +1031,9 @@ static void PREFERENCES_OT_associate_blend(wmOperatorType *ot)
 
 static wmOperatorStatus unassociate_blend_exec(bContext * /*C*/, wmOperator *op)
 {
-#ifdef __APPLE__
   UNUSED_VARS(op);
   BLI_assert_unreachable();
   return OPERATOR_CANCELLED;
-#else
-#  ifdef WIN32
-  if (BLI_windows_is_store_install()) {
-    BKE_report(
-        op->reports, RPT_ERROR, "Unregistration not possible from Microsoft Store installations");
-    return OPERATOR_CANCELLED;
-  }
-#  endif
-
-  const bool all_users = (U.uiflag & USER_REGISTER_ALL_USERS);
-  char *error_msg = nullptr;
-
-  WM_cursor_wait(true);
-  bool success = associate_blend(false, all_users, &error_msg);
-  WM_cursor_wait(false);
-
-  if (!success) {
-    BKE_report(
-        op->reports, RPT_ERROR, error_msg ? error_msg : "Unable to unregister file association");
-    if (error_msg) {
-      MEM_delete(error_msg);
-    }
-    return OPERATOR_CANCELLED;
-  }
-  BLI_assert(error_msg == nullptr);
-  BKE_report(op->reports, RPT_INFO, "File association unregistered");
-  return OPERATOR_FINISHED;
-#endif /* !__APPLE__ */
 }
 
 static void PREFERENCES_OT_unassociate_blend(wmOperatorType *ot)

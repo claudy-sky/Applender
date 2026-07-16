@@ -18,10 +18,6 @@
 #  include "GHOST_ContextMTL.hh"
 #endif
 
-#ifdef WITH_VULKAN_BACKEND
-#  include "GHOST_ContextVK.hh"
-#endif
-
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 
@@ -907,18 +903,6 @@ void GHOST_WindowCocoa::updateDrawingSize()
 GHOST_Context *GHOST_WindowCocoa::newDrawingContext(GHOST_TDrawingContextType type)
 {
   switch (type) {
-#ifdef WITH_VULKAN_BACKEND
-    case GHOST_kDrawingContextTypeVulkan: {
-      GHOST_Context *context = new GHOST_ContextVK(
-          want_context_params_, metal_layer_, 1, 2, preferred_device_, &hdr_info_);
-      if (context->initializeDrawingContext()) {
-        return context;
-      }
-      delete context;
-      return nullptr;
-    }
-#endif
-
 #ifdef WITH_METAL_BACKEND
     case GHOST_kDrawingContextTypeMetal: {
       GHOST_Context *context = new GHOST_ContextMTL(

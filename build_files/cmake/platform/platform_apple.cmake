@@ -162,7 +162,7 @@ string(APPEND PLATFORM_CFLAGS " -pipe -funsigned-char -fno-strict-aliasing -ffp-
 set(PLATFORM_LINKFLAGS "\
 -fexceptions -framework CoreServices -framework Foundation -framework IOKit -framework AppKit -framework Cocoa \
 -framework Carbon -framework AudioUnit -framework AudioToolbox -framework CoreAudio -framework Metal \
--framework QuartzCore"
+-framework QuartzCore -framework Accelerate -framework VideoToolbox -framework CoreMedia -framework CoreVideo"
 )
 
 if(WITH_CODEC_FFMPEG)
@@ -201,29 +201,17 @@ if(SYSTEMSTUBS_LIBRARY)
   list(APPEND PLATFORM_LINKLIBS SystemStubs)
 endif()
 
-if(WITH_OPENIMAGEDENOISE)
-  if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
-    # OpenImageDenoise uses BNNS from the Accelerate framework.
-    string(APPEND PLATFORM_LINKFLAGS " -framework Accelerate")
-  endif()
-endif()
+# Accelerate (BNNS for OpenImageDenoise, vDSP) is linked from the base
+# PLATFORM_LINKFLAGS above.
 
 if(WITH_JACK)
   string(APPEND PLATFORM_LINKFLAGS " -F/Library/Frameworks -weak_framework jackmp")
-endif()
-
-if(WITH_VULKAN_BACKEND)
-  find_package(ShaderC REQUIRED)
-  find_package(Vulkan REQUIRED)
 endif()
 
 if(WITH_SDL)
   find_package(SDL3 REQUIRED CONFIG)
 endif()
 add_bundled_libraries(sdl/lib)
-
-set(EPOXY_ROOT_DIR ${LIBDIR}/epoxy)
-find_package(Epoxy REQUIRED)
 
 set(PNG_ROOT ${LIBDIR}/png)
 find_package(PNG REQUIRED)

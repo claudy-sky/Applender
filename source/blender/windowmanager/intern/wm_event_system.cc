@@ -5636,13 +5636,7 @@ static void wm_eventemulation(wmEvent *event, bool test_only)
 
     if (event->type == LEFTMOUSE) {
       const wmEventModifierFlag mod_test = (
-#if !defined(WIN32)
-          (U.mouse_emulate_3_button_modifier == USER_EMU_MMB_MOD_OSKEY) ? KM_OSKEY : KM_ALT
-#else
-          /* Disable for WIN32 for now because it accesses the start menu. */
-          KM_ALT
-#endif
-      );
+          (U.mouse_emulate_3_button_modifier == USER_EMU_MMB_MOD_OSKEY) ? KM_OSKEY : KM_ALT);
 
       if (event->val == KM_PRESS) {
         if (event->modifier & mod_test) {
@@ -6185,23 +6179,6 @@ void wm_event_add_ghostevent(wmWindowManager *wm,
       if (pd->isDirectionInverted) {
         event.flag |= WM_EVENT_SCROLL_INVERT;
       }
-
-#if !defined(WIN32) && !defined(__APPLE__)
-      /* Ensure "auto" is used when supported. */
-      char trackpad_scroll_direction = U.trackpad_scroll_direction;
-      if ((WM_capabilities_flag() & WM_CAPABILITY_TRACKPAD_PHYSICAL_DIRECTION) == 0) {
-        switch (eUserpref_TrackpadScrollDir(trackpad_scroll_direction)) {
-          case USER_TRACKPAD_SCROLL_DIR_TRADITIONAL: {
-            event.flag &= ~WM_EVENT_SCROLL_INVERT;
-            break;
-          }
-          case USER_TRACKPAD_SCROLL_DIR_NATURAL: {
-            event.flag |= WM_EVENT_SCROLL_INVERT;
-            break;
-          }
-        }
-      }
-#endif
 
       wm_event_add_trackpad(win, &event, delta[0], delta[1]);
       break;

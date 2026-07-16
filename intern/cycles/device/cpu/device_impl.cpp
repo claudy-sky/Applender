@@ -10,10 +10,6 @@
 
 /* So ImathMath is included before our kernel_cpu_compat. */
 #ifdef WITH_OSL
-/* So no context pollution happens from indirectly included windows.h */
-#  ifdef _WIN32
-#    include "util/windows.h"
-#  endif
 #  include <OSL/oslexec.h>
 #endif
 
@@ -282,10 +278,7 @@ void CPUDevice::build_bvh(BVH *bvh, Progress &progress, bool refit)
 {
 #ifdef WITH_EMBREE
   if (bvh->params.bvh_layout == BVH_LAYOUT_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_OPTIX_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_METAL_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_HIPRT_EMBREE ||
-      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE)
+      bvh->params.bvh_layout == BVH_LAYOUT_MULTI_METAL_EMBREE)
   {
     BVHEmbree *const bvh_embree = static_cast<BVHEmbree *>(bvh);
     if (refit) {

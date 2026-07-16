@@ -15,19 +15,6 @@
 #include <cstring>
 #include <fcntl.h> /* For open flags (#O_BINARY, #O_RDONLY). */
 
-#ifdef WIN32
-/* Need to include windows.h so _WIN32_IE is defined. */
-#  include <windows.h>
-#  ifndef _WIN32_IE
-/* Minimal requirements for SHGetSpecialFolderPath on MINGW MSVC has this defined already. */
-#    define _WIN32_IE 0x0400
-#  endif
-/* For #SHGetSpecialFolderPath, has to be done before `BLI_winstuff.hh`
- * because 'near' is disabled through `BLI_windstuff.h`. */
-#  include "BLI_winstuff.hh"
-#  include <shlobj.h>
-#endif
-
 #include <fmt/format.h>
 
 #include "MEM_CacheLimiterC-Api.h"
@@ -3803,11 +3790,7 @@ static ui::Block *block_create_save_modified_images_dialog(bContext *C, ARegion 
   layout.separator(2.0f);
 
   /* Buttons. */
-#ifdef _WIN32
-  const bool windows_layout = true;
-#else
   const bool windows_layout = false;
-#endif
 
   if (windows_layout) {
     /* Windows standard layout. */
@@ -5128,11 +5111,7 @@ static ui::Block *block_create__close_file_dialog(bContext *C, ARegion *region, 
   layout.separator(2.0f);
 
   /* Buttons. */
-#ifdef _WIN32
-  const bool windows_layout = true;
-#else
   const bool windows_layout = false;
-#endif
 
   if (windows_layout) {
     /* Windows standard layout. */

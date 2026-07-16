@@ -35,26 +35,19 @@ struct ThreadKernelGlobalsCPU;
 
 /* Device Types */
 
+/* NOTE: Numeric values are kept fixed for DNA/addon compatibility even though
+ * CUDA/OPTIX/HIP/HIPRT/ONEAPI have been removed, leaving gaps at 2, 4, 5, 6, 8. */
 enum DeviceType {
   DEVICE_NONE = 0,
-  DEVICE_CPU,
-  DEVICE_CUDA,
-  DEVICE_MULTI,
-  DEVICE_OPTIX,
-  DEVICE_HIP,
-  DEVICE_HIPRT,
-  DEVICE_METAL,
-  DEVICE_ONEAPI,
-  DEVICE_DUMMY,
+  DEVICE_CPU = 1,
+  DEVICE_MULTI = 3,
+  DEVICE_METAL = 7,
+  DEVICE_DUMMY = 9,
 };
 
 enum DeviceTypeMask {
   DEVICE_MASK_CPU = (1 << DEVICE_CPU),
-  DEVICE_MASK_CUDA = (1 << DEVICE_CUDA),
-  DEVICE_MASK_OPTIX = (1 << DEVICE_OPTIX),
-  DEVICE_MASK_HIP = (1 << DEVICE_HIP),
   DEVICE_MASK_METAL = (1 << DEVICE_METAL),
-  DEVICE_MASK_ONEAPI = (1 << DEVICE_ONEAPI),
   DEVICE_MASK_ALL = ~0
 };
 
@@ -101,8 +94,7 @@ class DeviceInfo {
    * the driver or do nothing.
    *
    * Default value is chosen to be true intentionally - assume compliant unless proven otherwise,
-   * especially since CPU devices do not have any minimal versions, as well as some GPU backends,
-   * for example CUDA. */
+   * especially since CPU devices do not have any minimal versions, as well as some GPU backends. */
   bool meets_driver_requirement = true;
 
   KernelOptimizationLevel kernel_optimization_level =
@@ -130,10 +122,7 @@ class DeviceInfo {
 
   bool has_mnee() const
   {
-    /* Shadow caustics not supported on HIP without hardware ray-tracing, see #160089.
-     * This is a more complex condition that can't be determined in device_hip_info,
-     * so there is a helper for it here. */
-    return has_mnee_ && (type != DEVICE_HIP || use_hardware_raytracing);
+    return has_mnee_;
   }
 };
 
@@ -370,12 +359,8 @@ class Device {
   /* Indicted whether device types and devices lists were initialized. */
   static bool need_types_update, need_devices_update;
   static thread_mutex device_mutex;
-  static vector<DeviceInfo> &cuda_devices();
-  static vector<DeviceInfo> &optix_devices();
   static vector<DeviceInfo> &cpu_devices();
-  static vector<DeviceInfo> &hip_devices();
   static vector<DeviceInfo> &metal_devices();
-  static vector<DeviceInfo> &oneapi_devices();
   static uint devices_initialized_mask;
 };
 

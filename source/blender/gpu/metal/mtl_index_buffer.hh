@@ -22,7 +22,8 @@ namespace blender::gpu {
 class MTLIndexBuf : public IndexBuf {
   friend class MTLBatch;
   friend class MTLDrawList;
-  friend class MTLStorageBuf; /* For bind as SSBO resource access. */
+  friend class MTLStorageBuf;     /* For bind as SSBO resource access. */
+  friend class MTLBottomLevelAS;  /* For acceleration structure geometry access. */
 
  private:
   /* Metal buffer resource. */

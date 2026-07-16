@@ -13,12 +13,6 @@
 #include "GHOST_System.hh"
 #include "GHOST_WindowNULL.hh"
 
-#if defined(WITH_OPENGL_BACKEND) && defined(__linux__)
-#  include "GHOST_ContextEGL.hh"
-#endif
-#ifdef WITH_VULKAN_BACKEND
-#  include "GHOST_ContextVK.hh"
-#endif
 #include "GHOST_ContextNone.hh"
 
 class GHOST_WindowNULL;
@@ -121,61 +115,6 @@ class GHOST_SystemHeadless : public GHOST_System {
     (void)context_params_offscreen;
 
     switch (gpu_settings.context_type) {
-#ifdef WITH_VULKAN_BACKEND
-      case GHOST_kDrawingContextTypeVulkan: {
-#  ifdef _WIN32
-        GHOST_Context *context = new GHOST_ContextVK(
-            context_params_offscreen, (HWND)0, 1, 2, gpu_settings.preferred_device);
-#  elif defined(__APPLE__)
-        GHOST_Context *context = new GHOST_ContextVK(
-            context_params_offscreen, nullptr, 1, 2, gpu_settings.preferred_device);
-#  else
-        GHOST_Context *context = new GHOST_ContextVK(context_params_offscreen,
-                                                     GHOST_kVulkanPlatformHeadless,
-                                                     0,
-                                                     0,
-                                                     nullptr,
-                                                     nullptr,
-                                                     nullptr,
-                                                     1,
-                                                     2,
-                                                     gpu_settings.preferred_device);
-#  endif
-        if (context->initializeDrawingContext()) {
-          return context;
-        }
-
-        delete context;
-        return nullptr;
-      }
-#endif
-
-#if defined(WITH_OPENGL_BACKEND) && defined(__linux__)
-      case GHOST_kDrawingContextTypeOpenGL: {
-        GHOST_Context *context;
-        for (int minor = 6; minor >= 3; --minor) {
-          context = new GHOST_ContextEGL((GHOST_System *)this,
-                                         context_params_offscreen,
-                                         EGLNativeWindowType(0),
-                                         EGLNativeDisplayType(EGL_DEFAULT_DISPLAY),
-                                         EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
-                                         4,
-                                         minor,
-                                         GHOST_OPENGL_EGL_CONTEXT_FLAGS,
-                                         GHOST_OPENGL_EGL_RESET_NOTIFICATION_STRATEGY,
-                                         EGL_OPENGL_API);
-
-          if (context->initializeDrawingContext()) {
-            return context;
-          }
-          delete context;
-          context = nullptr;
-        }
-
-        return context;
-      }
-#endif
-
       default:
         /* Unsupported backend. */
         return nullptr;

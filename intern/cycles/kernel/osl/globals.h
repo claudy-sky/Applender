@@ -17,9 +17,7 @@
 #  include "kernel/osl/compat.h"
 #  include "kernel/osl/types.h"
 
-#  ifndef WIN32
 using std::isfinite;
-#  endif
 
 CCL_NAMESPACE_BEGIN
 

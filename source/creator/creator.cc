@@ -9,22 +9,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#ifdef WIN32
-#  ifdef WIN32_LEAN_AND_MEAN
-#    undef WIN32_LEAN_AND_MEAN
-#  endif
-#  include "utfconv.hh"
-#  include <windows.h>
-#  ifdef WITH_CPU_CHECK
-#    pragma comment(linker, "/include:cpu_check_win32")
-#  endif
-#endif
-
-#if defined(WITH_TBB_MALLOC) && defined(_MSC_VER) && defined(NDEBUG)
-#  pragma comment(lib, "tbbmalloc_proxy.lib")
-#  pragma comment(linker, "/include:__TBB_malloc_proxy")
-#endif
-
 #include "MEM_guardedalloc.h"
 
 #include "CLG_log.h"
@@ -113,10 +97,6 @@
 char **environ = nullptr;
 #endif
 
-#if defined(WITH_TBB_MALLOC) && defined(__linux__)
-#  include <tbb/scalable_allocator.h>
-#endif
-
 #include "creator_intern.h" /* Own include. */
 
 BLI_STATIC_ASSERT(ENDIAN_ORDER == L_ENDIAN, "Blender only builds on little endian systems")
@@ -160,12 +140,6 @@ void gmp_blender_init_allocator()
 /* -------------------------------------------------------------------- */
 /** \name Local Defines
  * \{ */
-
-/* When building as a Python module, don't use special argument handling
- * so the module loading logic can control the `argv` & `argc`. */
-#if defined(WIN32) && !defined(WITH_PYTHON_MODULE)
-#  define USE_WIN32_UNICODE_ARGS
-#endif
 
 /** \} */
 
@@ -217,11 +191,6 @@ struct CreatorAtExitData {
   bArgs *ba;
 #endif
 
-#ifdef USE_WIN32_UNICODE_ARGS
-  char **argv;
-  int argv_num;
-#endif
-
   /**
    * When non-null, run additional exit logic.
    * Cleared once early initialization is over.
@@ -237,16 +206,6 @@ static void callback_main_atexit(void *user_data)
   if (app_init_data->ba) {
     BLI_args_destroy(app_init_data->ba);
     app_init_data->ba = nullptr;
-  }
-#endif
-
-#ifdef USE_WIN32_UNICODE_ARGS
-  if (app_init_data->argv) {
-    while (app_init_data->argv_num) {
-      free((void *)app_init_data->argv[--app_init_data->argv_num]);
-    }
-    free((void *)app_init_data->argv);
-    app_init_data->argv = nullptr;
   }
 #endif
 
@@ -327,13 +286,7 @@ extern "C" int GHOST_HACK_getFirstFile(char buf[]);
  * - run #WM_main() event loop,
  *   or exit immediately when running in background-mode.
  */
-int main(int argc,
-#ifdef USE_WIN32_UNICODE_ARGS
-         const char ** /*argv_c*/
-#else
-         const char **argv
-#endif
-)
+int main(int argc, const char **argv)
 {
   using namespace blender;
 
@@ -359,26 +312,6 @@ int main(int argc,
 #endif
 
   restore_ld_preload();
-
-#ifdef WIN32
-#  ifdef USE_WIN32_UNICODE_ARGS
-  /* Win32 Unicode Arguments. */
-  {
-    /* NOTE: Can't use `guardedalloc` allocation here, as it's not yet initialized
-     * (it depends on the arguments passed in, which is what we're getting here!). */
-    wchar_t **argv_16 = CommandLineToArgvW(GetCommandLineW(), &argc);
-    app_init_data.argv = static_cast<char **>(malloc(argc * sizeof(char *)));
-    for (int i = 0; i < argc; i++) {
-      app_init_data.argv[i] = alloc_utf_8_from_16(argv_16[i], 0);
-    }
-    LocalFree(argv_16);
-
-    /* Free on early-exit. */
-    app_init_data.argv_num = argc;
-  }
-  const char **argv = const_cast<const char **>(app_init_data.argv);
-#  endif /* USE_WIN32_UNICODE_ARGS */
-#endif   /* WIN32 */
 
 #if defined(WITH_OPENGL_BACKEND) && BLI_SUBPROCESS_SUPPORT
   if (STREQ(argv[0], "--compilation-subprocess")) {
@@ -629,11 +562,6 @@ int main(int argc,
 #ifndef WITH_PYTHON_MODULE
   ba = nullptr;
   (void)ba;
-#endif
-
-#ifdef USE_WIN32_UNICODE_ARGS
-  argv = nullptr;
-  (void)argv;
 #endif
 
 #ifndef WITH_PYTHON_MODULE

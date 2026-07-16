@@ -97,7 +97,11 @@ ccl_device_inline int4 operator==(const int4 a, const int b)
 
 ccl_device_inline int4 operator>=(const int4 a, const int4 b)
 {
-#  ifdef __KERNEL_SSE__
+#  if defined(__KERNEL_NEON_NATIVE__)
+  /* Direct comparison instead of the negated less-than of the SSE path. */
+  return int4(vreinterpretq_m128i_u32(
+      vcgeq_s32(vreinterpretq_s32_m128i(a.m128), vreinterpretq_s32_m128i(b.m128))));
+#  elif defined(__KERNEL_SSE__)
   return int4(_mm_xor_si128(_mm_set1_epi32(0xffffffff), _mm_cmplt_epi32(a.m128, b.m128)));
 #  else
   return make_int4(a.x >= b.x, a.y >= b.y, a.z >= b.z, a.w >= b.w);
@@ -236,7 +240,12 @@ ccl_device_inline int4 clamp(const int4 a, const int4 mn, const int4 mx)
 
 ccl_device_inline int4 select(const int4 mask, const int4 a, const int4 b)
 {
-#  ifdef __KERNEL_SSE__
+#  if defined(__KERNEL_NEON_NATIVE__)
+  /* Bitwise select is exactly (mask & a) | (~mask & b) for any mask bits. */
+  return int4(vreinterpretq_m128i_s32(vbslq_s32(vreinterpretq_u32_m128i(mask.m128),
+                                                vreinterpretq_s32_m128i(a.m128),
+                                                vreinterpretq_s32_m128i(b.m128))));
+#  elif defined(__KERNEL_SSE__)
   return int4(_mm_or_si128(_mm_and_si128(mask, a), _mm_andnot_si128(mask, b)));
 #  else
   return make_int4(

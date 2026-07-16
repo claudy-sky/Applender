@@ -70,12 +70,7 @@
 
 #include <openexr_api.h>
 
-#if defined(WIN32)
-#  include "utfconv.hh"
-#  include <io.h>
-#else
-#  include <unistd.h>
-#endif
+#include <unistd.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -229,14 +224,7 @@ class IFileStream : public Imf::IStream {
  public:
   IFileStream(const char *filepath) : IStream(filepath)
   {
-    /* UTF8 file path support on windows. */
-#if defined(WIN32)
-    wchar_t *wfilepath = alloc_utf16_from_8(filepath, 0);
-    ifs.open(wfilepath, std::ios_base::binary);
-    free(wfilepath);
-#else
     ifs.open(filepath, std::ios_base::binary);
-#endif
 
     if (!ifs) {
       Iex::throwErrnoExc();
@@ -330,14 +318,7 @@ class OFileStream : public OStream {
  public:
   OFileStream(const char *filepath) : OStream(filepath)
   {
-    /* UTF8 file path support on windows. */
-#if defined(WIN32)
-    wchar_t *wfilepath = alloc_utf16_from_8(filepath, 0);
-    ofs.open(wfilepath, std::ios_base::binary);
-    free(wfilepath);
-#else
     ofs.open(filepath, std::ios_base::binary);
-#endif
 
     if (!ofs) {
       Iex::throwErrnoExc();

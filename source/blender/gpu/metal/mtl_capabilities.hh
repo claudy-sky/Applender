@@ -30,6 +30,9 @@ namespace blender::gpu {
 #define MTL_MAX_BUFFER_BINDINGS 31
 #define MTL_MAX_VERTEX_INPUT_ATTRIBUTES 31
 #define MTL_MAX_UNIFORMS_PER_BLOCK 64
+/* Acceleration structures share the buffer binding space. Slots are allocated dynamically from
+ * the unused buffer bindings of each shader (see `mtl_acceleration_structure_buffer_index`). */
+#define MTL_MAX_ACCELERATION_STRUCTURE_SLOTS 4
 
 #define MTL_MAX_SET_BYTES_SIZE 4096
 
@@ -54,6 +57,9 @@ struct MTLCapabilities {
   bool supports_texture_gather = false;
   bool supports_texture_atomics = false;
   bool supports_native_tile_inputs = false;
+  /* Hardware ray tracing (acceleration structures + ray queries).
+   * Requires explicit opt-in through `BLENDER_METAL_RAYTRACING=1`. */
+  bool supports_ray_tracing = false;
 
   /* GPU Family */
   bool supports_family_mac1 = false;

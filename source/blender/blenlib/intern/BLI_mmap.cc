@@ -17,15 +17,10 @@
 #include <atomic>
 #include <cstring>
 
-#ifndef WIN32
-#  include <csignal>
-#  include <cstdlib>
-#  include <sys/mman.h> /* For `mmap`. */
-#  include <unistd.h>   /* For `write`. */
-#else
-#  include "BLI_winstuff.hh"
-#  include <io.h> /* For `_get_osfhandle`. */
-#endif
+#include <csignal>
+#include <cstdlib>
+#include <sys/mman.h> /* For `mmap`. */
+#include <unistd.h>   /* For `write`. */
 
 namespace blender {
 
@@ -144,135 +139,6 @@ static bool try_handle_error_for_address(const void *address)
   return true;
 }
 
-#ifdef WIN32
-using MapViewOfFile3Fn = PVOID(WINAPI *)(HANDLE FileMapping,
-                                         HANDLE Process,
-                                         PVOID BaseAddress,
-                                         ULONG64 Offset,
-                                         SIZE_T ViewSize,
-                                         ULONG AllocationType,
-                                         ULONG PageProtection,
-                                         MEM_EXTENDED_PARAMETER *ExtendedParameters,
-                                         ULONG ParameterCount);
-
-using VirtualAlloc2Fn = PVOID(WINAPI *)(HANDLE Process,
-                                        PVOID BaseAddress,
-                                        SIZE_T Size,
-                                        ULONG AllocationType,
-                                        ULONG PageProtection,
-                                        MEM_EXTENDED_PARAMETER *ExtendedParameters,
-                                        ULONG ParameterCount);
-
-/* Pointers to `MapViewOfFile3` and `VirtualAlloc2`, as they need to be dynamically linked
- * at run-time because they are only available on Windows 10 (1803) or newer.
- * If they are not available, error handling is not used. */
-static MapViewOfFile3Fn mmap_MapViewOfFile3 = nullptr;
-
-static VirtualAlloc2Fn mmap_VirtualAlloc2 = nullptr;
-
-static void print_error(const char *message)
-{
-  char buffer[256];
-  size_t length = BLI_string_join(buffer, sizeof(buffer), "BLI_mmap: ", message, "\r\n");
-  HANDLE stderr_handle = GetStdHandle(STD_ERROR_HANDLE);
-  WriteFile(stderr_handle, buffer, length, nullptr, nullptr);
-}
-
-static bool try_map_zeros(BLI_mmap_file *file)
-{
-  if (!UnmapViewOfFileEx(file->memory, MEM_PRESERVE_PLACEHOLDER)) {
-    return false;
-  }
-
-  if (!CloseHandle(file->handle)) {
-    return false;
-  }
-
-  ULARGE_INTEGER length_ularge_int;
-  length_ularge_int.QuadPart = file->length;
-  file->handle = CreateFileMapping(INVALID_HANDLE_VALUE,
-                                   nullptr,
-                                   PAGE_READONLY,
-                                   length_ularge_int.HighPart,
-                                   length_ularge_int.LowPart,
-                                   nullptr);
-  if (file->handle == nullptr) {
-    return false;
-  }
-
-  void *memory = mmap_MapViewOfFile3(file->handle,
-                                     nullptr,
-                                     file->memory,
-                                     0,
-                                     file->length,
-                                     MEM_REPLACE_PLACEHOLDER,
-                                     PAGE_READONLY,
-                                     nullptr,
-                                     0);
-  if (memory == nullptr) {
-    return false;
-  }
-
-  BLI_assert(memory == file->memory);
-
-  return true;
-}
-
-static LONG page_exception_handler(EXCEPTION_POINTERS *ExceptionInfo) noexcept
-{
-  /* On Windows, if an IO error occurs trying to read from a mapped file, an
-   * EXCEPTION_IN_PAGE_ERROR error will be raised. Also check for
-   * EXCEPTION_ACCESS_VIOLATION, which can be raised when a thread tries to read from the mapping
-   * while it is being replaced by another. */
-  if (ExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_IN_PAGE_ERROR ||
-      ExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)
-  {
-    if (ExceptionInfo->ExceptionRecord->NumberParameters >= 2) {
-      /* Currently, MMAP'd files are read only, so don't replace the mapping when a write is
-       * attempted. */
-      if (ExceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1) {
-        return EXCEPTION_CONTINUE_SEARCH;
-      }
-      const void *address = reinterpret_cast<const void *>(
-          ExceptionInfo->ExceptionRecord->ExceptionInformation[1]);
-      if (try_handle_error_for_address(address)) {
-        return EXCEPTION_CONTINUE_EXECUTION;
-      }
-    }
-  }
-  return EXCEPTION_CONTINUE_SEARCH;
-}
-
-/* Ensures that the error handler is set up and ready. */
-static bool ensure_mmap_initialized()
-{
-  static std::atomic_bool initialized = false;
-  if (initialized) {
-    return true;
-  }
-
-  std::unique_lock lock(mmap_mutex);
-
-  if (!initialized) {
-    HMODULE kernelbase = ::LoadLibraryA("kernelbase.dll");
-    if (kernelbase) {
-      mmap_MapViewOfFile3 = reinterpret_cast<MapViewOfFile3Fn>(
-          ::GetProcAddress(kernelbase, "MapViewOfFile3"));
-      mmap_VirtualAlloc2 = reinterpret_cast<VirtualAlloc2Fn>(
-          ::GetProcAddress(kernelbase, "VirtualAlloc2"));
-    }
-    if (mmap_MapViewOfFile3 && mmap_VirtualAlloc2) {
-      /* First has to be FALSE to avoid our handler being called before ASAN's handler. */
-      AddVectoredExceptionHandler(FALSE, page_exception_handler);
-    }
-    else {
-      print_error("Could not load necessary functions for MMAP error handling.");
-    }
-    initialized = true;
-  }
-  return true;
-}
-#else  /* !WIN32 */
 static void print_error(const char *message)
 {
   char buffer[256];
@@ -350,7 +216,6 @@ static bool ensure_mmap_initialized()
 
   return true;
 }
-#endif /* !WIN32 */
 
 /* Adds a file to the list that the error handler checks. */
 static void error_handler_add(BLI_mmap_file *file)
@@ -386,69 +251,11 @@ BLI_mmap_file *BLI_mmap_open(int fd)
     return nullptr;
   }
 
-#ifndef WIN32
   /* Map the given file to memory. */
   memory = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, 0);
   if (memory == MAP_FAILED) {
     return nullptr;
   }
-#else  /* WIN32 */
-  /* Convert the POSIX-style file descriptor to a Windows handle. */
-  void *file_handle = (void *)_get_osfhandle(fd);
-
-  /* Memory mapping on Windows is a multi-step process - first we create a placeholder
-   * allocation. Then we create a mapping, and after that we create a view into that mapping
-   * on top of the placeholder. In our case, one view that spans the entire file is enough.
-   * NOTE: Changes to protection flags should also be reflected in #try_map_zeros. If write
-   * support is added, the write check in #page_exception_handler should be updated. */
-  if (mmap_MapViewOfFile3 && mmap_VirtualAlloc2) {
-    memory = mmap_VirtualAlloc2(nullptr,
-                                nullptr,
-                                length,
-                                MEM_RESERVE | MEM_RESERVE_PLACEHOLDER,
-                                PAGE_NOACCESS,
-                                nullptr,
-                                0);
-    if (memory == nullptr) {
-      return nullptr;
-    }
-
-    handle = CreateFileMapping(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
-    if (handle == nullptr) {
-      VirtualFree(memory, 0, MEM_RELEASE);
-      return nullptr;
-    }
-
-    if (mmap_MapViewOfFile3(handle,
-                            nullptr,
-                            memory,
-                            0,
-                            length,
-                            MEM_REPLACE_PLACEHOLDER,
-                            PAGE_READONLY,
-                            nullptr,
-                            0) == nullptr)
-    {
-      VirtualFree(memory, 0, MEM_RELEASE);
-      CloseHandle(handle);
-      return nullptr;
-    }
-  }
-  else {
-    /* Fallback without error handling in case `MapViewOfFile3` or `VirtualAlloc2` is not
-     * available. */
-    handle = CreateFileMapping(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
-    if (handle == nullptr) {
-      return nullptr;
-    }
-
-    memory = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0);
-    if (memory == nullptr) {
-      CloseHandle(handle);
-      return nullptr;
-    }
-  }
-#endif /* WIN32 */
 
   /* Now that the mapping was successful, allocate memory and set up the #BLI_mmap_file. */
   BLI_mmap_file *file = MEM_new_zeroed<BLI_mmap_file>(__func__);
@@ -494,12 +301,7 @@ bool BLI_mmap_any_io_error(const BLI_mmap_file *file)
 void BLI_mmap_free(BLI_mmap_file *file)
 {
   error_handler_remove(file);
-#ifndef WIN32
   munmap(static_cast<void *>(file->memory), file->length);
-#else
-  UnmapViewOfFile(file->memory);
-  CloseHandle(file->handle);
-#endif
 
   MEM_delete(file);
 }

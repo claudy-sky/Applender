@@ -21,7 +21,6 @@ class GraphicsInteropDevice;
 class RenderBuffers;
 class Progress;
 
-bool use_optix_denoiser(Device *denoiser_device, const DenoiseParams &params);
 
 bool use_gpu_oidn_denoiser(Device *denoiser_device, const DenoiseParams &params);
 

@@ -14,11 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#ifndef WIN32
-#  include <unistd.h>
-#else
-#  include <io.h>
-#endif
+#include <unistd.h>
 #include "MEM_guardedalloc.h"
 
 #include "BLI_math_matrix_c.hh"

@@ -17,10 +17,6 @@
 
 #include "BKE_appdir.hh"
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 namespace blender {
 
 static int blf_load_font_default(const char *filename, const bool unique)

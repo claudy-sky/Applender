@@ -24,10 +24,6 @@
 
 #include "BLT_translation.hh"
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "ED_fileselect.hh"
 #include "ED_screen.hh"
 #include "ED_select_utils.hh"
@@ -1897,22 +1893,6 @@ static wmOperatorStatus file_external_operation_exec(bContext *C, wmOperator *op
 
   WM_cursor_set(CTX_wm_window(C), WM_CURSOR_WAIT);
 
-#ifdef WIN32
-  if (!(fileentry->typeflag & FILE_TYPE_DIR) &&
-      ELEM(operation, FILE_EXTERNAL_OPERATION_FOLDER_OPEN, FILE_EXTERNAL_OPERATION_FOLDER_CMD))
-  {
-    /* Not a folder path, so for these operations use the root. */
-    const char *root = filelist_dir(sfile->files);
-    if (BLI_file_external_operation_execute(root, operation)) {
-      WM_cursor_set(CTX_wm_window(C), WM_CURSOR_DEFAULT);
-      return OPERATOR_FINISHED;
-    }
-  }
-  if (BLI_file_external_operation_execute(filepath, operation)) {
-    WM_cursor_set(CTX_wm_window(C), WM_CURSOR_DEFAULT);
-    return OPERATOR_FINISHED;
-  }
-#else
   wmOperatorType *ot = WM_operatortype_find("WM_OT_path_open", true);
   PointerRNA op_props = WM_operator_properties_create_ptr(ot);
   RNA_string_set(&op_props, "filepath", filepath);
@@ -1924,7 +1904,6 @@ static wmOperatorStatus file_external_operation_exec(bContext *C, wmOperator *op
     WM_cursor_set(CTX_wm_window(C), WM_CURSOR_DEFAULT);
     return OPERATOR_FINISHED;
   }
-#endif
 
   BKE_reportf(
       op->reports, RPT_ERROR, "Failure to perform external file operation on \"%s\"", filepath);
@@ -1969,16 +1948,10 @@ static void file_os_operations_menu_item(ui::Layout &layout,
                                          const char *path,
                                          FileExternalOperation operation)
 {
-#ifdef WIN32
-  if (!BLI_file_external_operation_supported(path, operation)) {
-    return;
-  }
-#else
   UNUSED_VARS(path);
   if (!ELEM(operation, FILE_EXTERNAL_OPERATION_OPEN, FILE_EXTERNAL_OPERATION_FOLDER_OPEN)) {
     return;
   }
-#endif
 
   const char *title = "";
   RNA_enum_name(file_external_operation, operation, &title);
@@ -2875,17 +2848,6 @@ static void file_expand_directory(const Main *bmain, FileSelectParams *params)
       do_reset = true;
     }
   }
-#ifdef WIN32
-  else if (BLI_path_is_win32_drive_only(params->dir)) {
-    /* Change `C:` --> `C:\`, see: #28102. */
-    params->dir[2] = SEP;
-    params->dir[3] = '\0';
-  }
-  else if (BLI_path_is_unc(params->dir)) {
-    BLI_path_normalize_unc(params->dir, sizeof(params->dir));
-  }
-#endif /* WIN32 */
-
   if (do_reset) {
     STRNCPY(params->dir, BKE_appdir_folder_root());
   }
@@ -2933,20 +2895,6 @@ static bool can_create_dir_from_user_input(const char dir[FILE_MAX_LIBEXTRA])
       return false;
     }
   }
-
-#if defined(WIN32)
-  /* For UNC paths we need to check whether the parent of the new
-   * directory is a proper directory itself and not a share or the
-   * UNC root (server name) itself. Calling #BLI_is_dir does this. */
-  if (BLI_path_is_unc(dir)) {
-    char tdir[FILE_MAX_LIBEXTRA];
-    STRNCPY(tdir, dir);
-    BLI_path_parent_dir(tdir);
-    if (!BLI_is_dir(tdir)) {
-      return false;
-    }
-  }
-#endif /* WIN32 */
 
   return true;
 }

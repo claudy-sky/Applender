@@ -6,13 +6,7 @@
  * \ingroup blenloader
  */
 
-#ifndef WIN32
-#  include <unistd.h> /* for read close */
-#else
-#  include "BLI_winstuff.hh"
-#  include "winsock2.h"
-#  include <io.h> /* for open close read */
-#endif
+#include <unistd.h> /* for read close */
 
 /* allow readfile to use deprecated functionality */
 #define DNA_DEPRECATED_ALLOW

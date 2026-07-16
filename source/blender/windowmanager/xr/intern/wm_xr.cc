@@ -73,24 +73,6 @@ bool wm_xr_init(bContext *C)
   {
     Vector<GHOST_TXrGraphicsBinding> gpu_bindings_candidates;
     switch (GPU_backend_get_type()) {
-#ifdef WITH_OPENGL_BACKEND
-      case GPU_BACKEND_OPENGL:
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsOpenGL);
-#  ifdef WIN32
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsOpenGLD3D11);
-#  endif
-        break;
-#endif
-
-#ifdef WITH_VULKAN_BACKEND
-      case GPU_BACKEND_VULKAN:
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsVulkan);
-#  ifdef WIN32
-        gpu_bindings_candidates.append(GHOST_kXrGraphicsVulkanD3D11);
-#  endif
-        break;
-#endif
-
 #ifdef WITH_METAL_BACKEND
       case GPU_BACKEND_METAL:
         gpu_bindings_candidates.append(GHOST_kXrGraphicsMetal);
@@ -111,12 +93,6 @@ bool wm_xr_init(bContext *C)
     if (G.debug & G_DEBUG_XR_TIME) {
       create_info.context_flag |= GHOST_kXrContextDebugTime;
     }
-#ifdef WIN32
-    if (GPU_type_matches(GPU_DEVICE_NVIDIA, GPU_OS_WIN, GPU_DRIVER_ANY)) {
-      create_info.context_flag |= GHOST_kXrContextGpuNVIDIA;
-    }
-#endif
-
     GHOST_IXrContext *ghost_context;
     if (!(ghost_context = GHOST_XrContextCreate(&create_info))) {
       return false;

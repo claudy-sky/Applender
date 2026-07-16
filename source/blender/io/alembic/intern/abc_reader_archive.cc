@@ -18,10 +18,6 @@
 #include "BLI_path_utils.hh"
 #include "BLI_string.hh"
 
-#ifdef WIN32
-#  include "utfconv.hh"
-#endif
-
 #include <fstream>
 #include <vector>
 
@@ -117,14 +113,7 @@ ArchiveReader::ArchiveReader(const Main *bmain, const char *filename)
   STRNCPY(abs_filepath, filename);
   BLI_path_abs(abs_filepath, BKE_main_blendfile_path(bmain));
 
-#ifdef WIN32
-  UTF16_ENCODE(abs_filepath);
-  std::wstring wstr(abs_filepath_16);
-  m_infile.open(wstr.c_str(), std::ios::in | std::ios::binary);
-  UTF16_UN_ENCODE(abs_filepath);
-#else
   m_infile.open(abs_filepath, std::ios::in | std::ios::binary);
-#endif
 
   m_streams.push_back(&m_infile);
 

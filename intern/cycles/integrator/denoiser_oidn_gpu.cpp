@@ -7,7 +7,6 @@
 #  include "integrator/denoiser_oidn_gpu.h"
 
 #  include "device/device.h"
-#  include "device/oneapi/device_impl.h"
 #  include "device/queue.h"
 
 #  include "session/buffers.h"
@@ -81,22 +80,6 @@ bool OIDNDenoiserGPU::is_device_supported(const DeviceInfo &device)
 
   int device_type = OIDN_DEVICE_TYPE_DEFAULT;
   switch (device.type) {
-#    ifdef OIDN_DEVICE_SYCL
-    case DEVICE_ONEAPI:
-      device_type = OIDN_DEVICE_TYPE_SYCL;
-      break;
-#    endif
-#    ifdef OIDN_DEVICE_HIP
-    case DEVICE_HIP:
-      device_type = OIDN_DEVICE_TYPE_HIP;
-      break;
-#    endif
-#    ifdef OIDN_DEVICE_CUDA
-    case DEVICE_CUDA:
-    case DEVICE_OPTIX:
-      device_type = OIDN_DEVICE_TYPE_CUDA;
-      break;
-#    endif
 #    ifdef OIDN_DEVICE_METAL
     case DEVICE_METAL: {
       const int num_devices = oidnGetNumPhysicalDevices();
@@ -212,35 +195,12 @@ bool OIDNDenoiserGPU::denoise_create_if_needed(DenoiseContext &context)
   base_.release_all_resources();
 
   switch (denoiser_device_->info.type) {
-#  if defined(OIDN_DEVICE_SYCL) && defined(WITH_ONEAPI)
-    case DEVICE_ONEAPI:
-      base_.oidn_device_ = oidnNewSYCLDevice(
-          (const sycl::queue *)reinterpret_cast<OneapiDevice *>(denoiser_device_)->sycl_queue(),
-          1);
-      break;
-#  endif
 #  if defined(OIDN_DEVICE_METAL) && defined(WITH_METAL)
     case DEVICE_METAL: {
       denoiser_queue_->init_execution();
       const MTLCommandQueue_id queue = (const MTLCommandQueue_id)denoiser_queue_->native_queue();
       base_.oidn_device_ = oidnNewMetalDevice(&queue, 1);
     } break;
-#  endif
-#  if defined(OIDN_DEVICE_CUDA) && defined(WITH_CUDA)
-    case DEVICE_CUDA:
-    case DEVICE_OPTIX: {
-      /* Directly using the stream from the DeviceQueue returns "invalid resource handle". */
-      cudaStream_t stream = nullptr;
-      base_.oidn_device_ = oidnNewCUDADevice(&denoiser_device_->info.num, &stream, 1);
-      break;
-    }
-#  endif
-#  if defined(OIDN_DEVICE_HIP) && defined(WITH_HIP)
-    case DEVICE_HIP: {
-      hipStream_t stream = nullptr;
-      base_.oidn_device_ = oidnNewHIPDevice(&denoiser_device_->info.num, &stream, 1);
-      break;
-    }
 #  endif
     default:
       break;

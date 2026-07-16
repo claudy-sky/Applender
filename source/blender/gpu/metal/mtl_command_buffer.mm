@@ -436,6 +436,42 @@ id<MTLComputeCommandEncoder> MTLCommandBufferManager::ensure_begin_compute_encod
   return active_compute_command_encoder_;
 }
 
+id<MTLAccelerationStructureCommandEncoder> MTLCommandBufferManager::
+    acceleration_structure_encoder_begin()
+{
+  /* Ensure active command buffer. */
+  id<MTLCommandBuffer> cmd_buf = this->ensure_begin();
+  BLI_assert(cmd_buf);
+
+  /* Acceleration structure encoders are short-lived and never remain active across calls,
+   * so any active encoder can be ended unconditionally. */
+  this->end_active_command_encoder();
+
+  id<MTLAccelerationStructureCommandEncoder> encoder = [cmd_buf
+      accelerationStructureCommandEncoder];
+  BLI_assert(encoder != nil);
+  [encoder retain];
+
+  /* Add debug label. */
+  if (G.debug & G_DEBUG_GPU) {
+    std::string debug_name = GPU_debug_get_groups_names({1, 1});
+    [encoder setLabel:@(debug_name.c_str())];
+  }
+
+  /* Update command buffer encoder heuristics. */
+  this->register_encoder_counters();
+
+  return encoder;
+}
+
+void MTLCommandBufferManager::acceleration_structure_encoder_end(
+    id<MTLAccelerationStructureCommandEncoder> encoder)
+{
+  BLI_assert(encoder != nil);
+  [encoder endEncoding];
+  [encoder release];
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -894,6 +930,15 @@ void MTLComputeCommandEncoder::set_sampler(id<MTLSamplerState> sampler_state, in
 {
   [enc setSamplerState:sampler_state atIndex:index];
 }
+void MTLComputeCommandEncoder::set_acceleration_structure(
+    id<MTLAccelerationStructure> accel_struct, int index)
+{
+  [enc setAccelerationStructure:accel_struct atBufferIndex:index];
+}
+void MTLComputeCommandEncoder::use_resource(id<MTLResource> resource, MTLResourceUsage usage)
+{
+  [enc useResource:resource usage:usage];
+}
 
 void MTLVertexCommandEncoder::set_buffer_offset(size_t offset, int index)
 {
@@ -915,6 +960,22 @@ void MTLVertexCommandEncoder::set_sampler(id<MTLSamplerState> sampler_state, int
 {
   [enc setVertexSamplerState:sampler_state atIndex:index];
 }
+void MTLVertexCommandEncoder::set_acceleration_structure(
+    id<MTLAccelerationStructure> accel_struct, int index)
+{
+  /* Ray tracing capability is only reported on macOS 12+ (see `capabilities_init`). */
+#if defined(MAC_OS_VERSION_12_0)
+  if (@available(macOS 12.0, *)) {
+    [enc setVertexAccelerationStructure:accel_struct atBufferIndex:index];
+    return;
+  }
+#endif
+  MTL_LOG_ERROR("Acceleration structure bindings in vertex shaders require macOS 12.0.");
+}
+void MTLVertexCommandEncoder::use_resource(id<MTLResource> resource, MTLResourceUsage usage)
+{
+  [enc useResource:resource usage:usage stages:MTLRenderStageVertex];
+}
 
 void MTLFragmentCommandEncoder::set_buffer_offset(size_t offset, int index)
 {
@@ -935,6 +996,22 @@ void MTLFragmentCommandEncoder::set_texture(id<MTLTexture> tex, int index)
 void MTLFragmentCommandEncoder::set_sampler(id<MTLSamplerState> sampler_state, int index)
 {
   [enc setFragmentSamplerState:sampler_state atIndex:index];
+}
+void MTLFragmentCommandEncoder::set_acceleration_structure(
+    id<MTLAccelerationStructure> accel_struct, int index)
+{
+  /* Ray tracing capability is only reported on macOS 12+ (see `capabilities_init`). */
+#if defined(MAC_OS_VERSION_12_0)
+  if (@available(macOS 12.0, *)) {
+    [enc setFragmentAccelerationStructure:accel_struct atBufferIndex:index];
+    return;
+  }
+#endif
+  MTL_LOG_ERROR("Acceleration structure bindings in fragment shaders require macOS 12.0.");
+}
+void MTLFragmentCommandEncoder::use_resource(id<MTLResource> resource, MTLResourceUsage usage)
+{
+  [enc useResource:resource usage:usage stages:MTLRenderStageFragment];
 }
 
 }  // namespace blender::gpu

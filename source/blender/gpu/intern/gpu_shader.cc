@@ -167,14 +167,8 @@ static void standard_defines(Vector<StringRefNull> &sources)
   /* API Definition */
   GPUBackendType backend = GPU_backend_get_type();
   switch (backend) {
-    case GPU_BACKEND_OPENGL:
-      sources.append("#define GPU_OPENGL\n");
-      break;
     case GPU_BACKEND_METAL:
       sources.append("#define GPU_METAL\n");
-      break;
-    case GPU_BACKEND_VULKAN:
-      sources.append("#define GPU_VULKAN\n");
       break;
     default:
       BLI_assert_msg(false, "Invalid GPU Backend Type");

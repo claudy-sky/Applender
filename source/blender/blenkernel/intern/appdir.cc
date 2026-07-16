@@ -31,25 +31,11 @@
 
 #include "CLG_log.h"
 
-#ifdef WIN32
-#  include "BLI_string_utf8.hh"
-#  include "utf_winfunc.hh"
-#  include "utfconv.hh"
-#  include <io.h>
-#  ifdef _WIN32_IE
-#    undef _WIN32_IE
-#  endif
-#  define _WIN32_IE 0x0501
-#  include "BLI_winstuff.hh"
-#  include <shlobj.h>
-#  include <windows.h>
-#else /* non windows */
-#  ifdef WITH_BINRELOC
-#    include "binreloc.h"
-#  endif
+#ifdef WITH_BINRELOC
+#  include "binreloc.h"
+#endif
 /* #mkdtemp on OSX (and probably all *BSD?), not worth making specific check for this OS. */
-#  include <unistd.h>
-#endif /* !WIN32 */
+#include <unistd.h>
 
 namespace blender {
 
@@ -138,28 +124,12 @@ static char *blender_version_decimal(const int version)
 
 const char *BKE_appdir_folder_default()
 {
-#ifndef WIN32
   return BLI_dir_home();
-#else  /* Windows */
-  static char documentfolder[FILE_MAXDIR];
-
-  if (BKE_appdir_folder_documents(documentfolder)) {
-    return documentfolder;
-  }
-
-  return nullptr;
-#endif /* WIN32 */
 }
 
 const char *BKE_appdir_folder_root()
 {
-#ifndef WIN32
   return "/";
-#else
-  static char root[4];
-  BLI_windows_get_default_root_dir(root);
-  return root;
-#endif
 }
 
 const char *BKE_appdir_folder_default_or_root()
@@ -216,19 +186,7 @@ void BKE_appdir_folder_caches(char *path, const size_t path_maxncpy)
     return;
   }
 
-#ifdef WIN32
-  BLI_path_join(path,
-                path_maxncpy,
-                caches_root_path->c_str(),
-                "Blender Foundation",
-                "Blender",
-                "Cache",
-                SEP_STR);
-#elif defined(__APPLE__)
   BLI_path_join(path, path_maxncpy, caches_root_path->c_str(), "Blender", SEP_STR);
-#else /* __linux__ */
-  BLI_path_join(path, path_maxncpy, caches_root_path->c_str(), "blender", SEP_STR);
-#endif
 }
 
 bool BKE_appdir_font_folder_default(char *dir, size_t dir_maxncpy)
@@ -236,18 +194,9 @@ bool BKE_appdir_font_folder_default(char *dir, size_t dir_maxncpy)
   char test_dir[FILE_MAXDIR];
   test_dir[0] = '\0';
 
-#ifdef WIN32
-  wchar_t wpath[MAX_PATH];
-  if (SHGetSpecialFolderPathW(0, wpath, CSIDL_FONTS, 0)) {
-    BLI_strncpy_wchar_as_utf8(test_dir, wpath, sizeof(test_dir));
-  }
-#elif defined(__APPLE__)
   if (const char *home_dir = BLI_dir_home()) {
     BLI_path_join(test_dir, sizeof(test_dir), home_dir, "Library/Fonts");
   }
-#else
-  STRNCPY(test_dir, "/usr/share/fonts");
-#endif
 
   if (test_dir[0] && BLI_exists(test_dir)) {
     BLI_strncpy(dir, test_dir, dir_maxncpy);
@@ -456,11 +405,7 @@ static Vector<std::string> get_path_environment_multiple(const char *subfolder_n
     return paths;
   }
 
-#ifdef _WIN32
-  const char separator = ';';
-#else
   const char separator = ':';
-#endif
 
   const char *char_begin = env_path;
   const char *char_end = BLI_strchr_or_end(char_begin, separator);
@@ -919,46 +864,16 @@ static void where_am_i(char *program_filepath,
   }
 #  endif
 
-#  ifdef _WIN32
-  {
-    wchar_t *fullname_16 = MEM_new_array_uninitialized<wchar_t>(program_filepath_maxncpy,
-                                                                "ProgramPath");
-    if (GetModuleFileNameW(0, fullname_16, program_filepath_maxncpy)) {
-      conv_utf_16_to_8(fullname_16, program_filepath, program_filepath_maxncpy);
-      if (!BLI_exists(program_filepath)) {
-        CLOG_ERROR(&LOG,
-                   "Program path can't be found: \"%.*s\"",
-                   int(program_filepath_maxncpy),
-                   program_filepath);
-        MessageBox(nullptr,
-                   "path contains invalid characters or is too long (see console)",
-                   "Error",
-                   MB_OK);
-      }
-      MEM_delete(fullname_16);
-      return;
-    }
-
-    MEM_delete(fullname_16);
-  }
-#  endif
-
   /* Unix and non Linux. */
   if (program_name && program_name[0]) {
 
     BLI_strncpy(program_filepath, program_name, program_filepath_maxncpy);
     if (program_name[0] == '.') {
       BLI_path_abs_from_cwd(program_filepath, program_filepath_maxncpy);
-#  ifdef _WIN32
-      BLI_path_program_extensions_add_win32(program_filepath, program_filepath_maxncpy);
-#  endif
     }
     else if (BLI_path_slash_rfind(program_name)) {
       /* Full path. */
       BLI_strncpy(program_filepath, program_name, program_filepath_maxncpy);
-#  ifdef _WIN32
-      BLI_path_program_extensions_add_win32(program_filepath, program_filepath_maxncpy);
-#  endif
     }
     else {
       BLI_path_program_search(program_filepath, program_filepath_maxncpy, program_name);
@@ -1024,17 +939,11 @@ bool BKE_appdir_program_python_search(char *program_filepath,
   const char *python_build_def = STRINGIFY(PYTHON_EXECUTABLE_NAME);
 #endif
   const char *basename = "python";
-#if defined(WIN32) && !defined(NDEBUG)
-  const char *basename_debug = "python_d";
-#endif
   char python_version[16];
   /* Check both possible names. */
   const char *python_names[] = {
 #ifdef PYTHON_EXECUTABLE_NAME
       python_build_def,
-#endif
-#if defined(WIN32) && !defined(NDEBUG)
-      basename_debug,
 #endif
       python_version,
       basename,
@@ -1052,14 +961,7 @@ bool BKE_appdir_program_python_search(char *program_filepath,
         BLI_path_join(
             program_filepath, program_filepath_maxncpy, python_bin_dir->c_str(), python_names[i]);
 
-        if (
-#ifdef _WIN32
-            BLI_path_program_extensions_add_win32(program_filepath, program_filepath_maxncpy)
-#else
-            BLI_exists(program_filepath)
-#endif
-        )
-        {
+        if (BLI_exists(program_filepath)) {
           is_found = true;
           break;
         }
@@ -1223,11 +1125,7 @@ static bool tempdir_session_create(char *tempdir_session,
   if (tempdir_session_len_required <= tempdir_session_maxncpy) {
     /* No need to use path joining utility as we know the last character of #tempdir is a slash. */
     BLI_string_join(tempdir_session, tempdir_session_maxncpy, tempdir, session_name);
-#ifdef WIN32
-    const bool needs_create = (_mktemp_s(tempdir_session, tempdir_session_len_required) == 0);
-#else
     const bool needs_create = (mkdtemp(tempdir_session) == nullptr);
-#endif
     if (needs_create) {
       BLI_dir_create_recursive(tempdir_session);
     }

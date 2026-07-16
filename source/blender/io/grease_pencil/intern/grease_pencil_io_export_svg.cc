@@ -27,10 +27,6 @@
 #include <optional>
 #include <pugixml.hpp>
 
-#ifdef WIN32
-#  include "utfconv.hh"
-#endif
-
 /** \file
  * \ingroup bgrease_pencil
  */
@@ -541,14 +537,7 @@ bool SVGExporter::write_to_file(StringRefNull filepath)
 {
   bool result = true;
   /* Support unicode character paths on Windows. */
-#ifdef WIN32
-  wchar_t *filepath_16 = alloc_utf16_from_8(filepath.c_str(), 0);
-  std::wstring wstr(filepath_16);
-  result = main_doc_.save_file(wstr.c_str());
-  free(filepath_16);
-#else
   result = main_doc_.save_file(filepath.c_str());
-#endif
 
   return result;
 }

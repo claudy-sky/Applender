@@ -19,11 +19,6 @@
 #include "BLI_fileops.hh"
 #include "BLI_path_utils.hh"
 
-/* For S_ISREG() and S_ISDIR() on Windows. */
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "asset_library_service.hh"
 
 #include "CLG_log.h"

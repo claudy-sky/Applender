@@ -7,10 +7,6 @@
 #ifndef OPENSUBDIV_BASE_TYPE_CONVERT_H_
 #define OPENSUBDIV_BASE_TYPE_CONVERT_H_
 
-#ifdef _MSC_VER
-#  include <iso646.h>
-#endif
-
 #include <opensubdiv/sdc/options.h>
 #include <opensubdiv/sdc/types.h>
 

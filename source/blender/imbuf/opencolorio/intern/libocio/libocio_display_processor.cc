@@ -29,7 +29,6 @@ static CLG_LogRef LOG = {"color_management"};
 static TransferFunction system_extended_srgb_transfer_function(const LibOCIOView *view,
                                                                const bool use_hdr_buffer)
 {
-#ifdef __APPLE__
   /* The Metal backend always uses sRGB or extended sRGB buffer.
    *
    * How this will be decoded depends on the macOS display preset, but from testing
@@ -41,34 +40,6 @@ static TransferFunction system_extended_srgb_transfer_function(const LibOCIOView
    */
   UNUSED_VARS(use_hdr_buffer, view);
   return TransferFunction::sRGB;
-#elif defined(_WIN32)
-  /* The Vulkan backend uses either sRGB for SDR, or linear extended sRGB for HDR.
-   *
-   * - Windows HDR mode off: use_hdr_buffer will be false, and we encode with sRGB.
-   *   By default Windows will decode with gamma 2.2.
-   * - Windows HDR mode on: use_hdr_buffer will be true, and we encode with sRGB.
-   *   The Vulkan HDR swapchain blitting will decode with sRGB to cancel this out
-   *   exactly, meaning we effectively pass on linear values unmodified.
-   *
-   * Note this means that both the user interface and SDR content will not be
-   * displayed the same in HDR mode off and on. However it is consistent with other
-   * software. To match, gamma 2.2 would have to be used.
-   */
-  UNUSED_VARS(use_hdr_buffer, view);
-  return TransferFunction::sRGB;
-#else
-  /* The Vulkan backend uses either sRGB for SDR, or linear extended sRGB for HDR.
-   *
-   * - When using a HDR swapchain and the display + view is HDR, ensure we pass on
-   *   values linearly by doing gamma 2.2 encode here + gamma 2.2 decode in the
-   *   Vulkan HDR swapchain blitting.
-   * - When using HDR swapain and the display + view is SDR, use sRGB encode to
-   *   emulate what happens on a typical SDR monitor.
-   * - When using an SDR swapchain, the buffer is always sRGB.
-   */
-  return (use_hdr_buffer && view && view->is_hdr()) ? TransferFunction::Gamma22 :
-                                                      TransferFunction::sRGB;
-#endif
 }
 
 static OCIO_NAMESPACE::TransformRcPtr create_extended_srgb_transform(

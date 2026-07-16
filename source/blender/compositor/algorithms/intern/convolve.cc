@@ -8,14 +8,10 @@
 #include "BLI_array.hh"
 #include "BLI_assert.hh"
 #include "BLI_enumerable_thread_specific.hh"
-#include "BLI_fftw.hh"
+#include "BLI_fft.hh"
 #include "BLI_index_range.hh"
 #include "BLI_memory_utils.hh"
 #include "BLI_task.hh"
-
-#if defined(WITH_FFTW3)
-#  include <fftw3.h>
-#endif
 
 #include "COM_context.hh"
 #include "COM_result.hh"
@@ -44,7 +40,7 @@ void convolve(Context &context,
   const int2 kernel_size = kernel.domain().data_size;
   const int2 needed_padding_amount = math::max(kernel_size, image_size);
   const int2 needed_spatial_size = image_size + needed_padding_amount - 1;
-  const int2 spatial_size = fftw::optimal_size_for_real_transform(needed_spatial_size);
+  const int2 spatial_size = fft::optimal_size_for_real_transform(needed_spatial_size);
 
   /* The FFTW real to complex transforms utilizes the hermitian symmetry of real transforms and
    * stores only half the output since the other half is redundant, so we only allocate half of
@@ -69,17 +65,16 @@ void convolve(Context &context,
   Array<float *> image_spatial_domain_channels(input_channels_count);
   Array<std::complex<float> *> image_frequency_domain_channels(input_channels_count);
   for (const int channel : image_spatial_domain_channels.index_range()) {
-    image_spatial_domain_channels[channel] = fftwf_alloc_real(spatial_pixels_count);
-    image_frequency_domain_channels[channel] = reinterpret_cast<std::complex<float> *>(
-        fftwf_alloc_complex(frequency_pixels_count));
+    image_spatial_domain_channels[channel] = fft::alloc_real(spatial_pixels_count);
+    image_frequency_domain_channels[channel] = fft::alloc_complex(frequency_pixels_count);
     forward_transform_tasks.append(ForwardTransformTask{image_spatial_domain_channels[channel],
                                                         image_frequency_domain_channels[channel]});
   }
 
   BLI_SCOPED_DEFER([&]() {
     for (const int channel : image_spatial_domain_channels.index_range()) {
-      fftwf_free(image_spatial_domain_channels[channel]);
-      fftwf_free(image_frequency_domain_channels[channel]);
+      fft::free_buffer(image_spatial_domain_channels[channel]);
+      fft::free_buffer(image_frequency_domain_channels[channel]);
     }
   });
 
@@ -91,17 +86,16 @@ void convolve(Context &context,
   Array<float *> kernel_spatial_domain_channels(kernel_channels_count);
   Array<std::complex<float> *> kernel_frequency_domain_channels(kernel_channels_count);
   for (const int channel : kernel_spatial_domain_channels.index_range()) {
-    kernel_spatial_domain_channels[channel] = fftwf_alloc_real(spatial_pixels_count);
-    kernel_frequency_domain_channels[channel] = reinterpret_cast<std::complex<float> *>(
-        fftwf_alloc_complex(frequency_pixels_count));
+    kernel_spatial_domain_channels[channel] = fft::alloc_real(spatial_pixels_count);
+    kernel_frequency_domain_channels[channel] = fft::alloc_complex(frequency_pixels_count);
     forward_transform_tasks.append(ForwardTransformTask{
         kernel_spatial_domain_channels[channel], kernel_frequency_domain_channels[channel]});
   }
 
   BLI_SCOPED_DEFER([&]() {
     for (const int channel : kernel_spatial_domain_channels.index_range()) {
-      fftwf_free(kernel_spatial_domain_channels[channel]);
-      fftwf_free(kernel_frequency_domain_channels[channel]);
+      fft::free_buffer(kernel_spatial_domain_channels[channel]);
+      fft::free_buffer(kernel_frequency_domain_channels[channel]);
     }
   });
 
@@ -116,23 +110,10 @@ void convolve(Context &context,
    * The input and output buffers here are dummy buffers and still not initialized, because they
    * are required by the planner internally for planning and their data will be overwritten. So
    * make sure not to initialize the buffers before creating the plan. */
-  fftwf_plan forward_plan = fftwf_plan_dft_r2c_2d(
-      spatial_size.y,
-      spatial_size.x,
-      image_spatial_domain_channels[0],
-      reinterpret_cast<fftwf_complex *>(image_frequency_domain_channels[0]),
-      FFTW_ESTIMATE);
-  fftwf_plan backward_plan = fftwf_plan_dft_c2r_2d(
-      spatial_size.y,
-      spatial_size.x,
-      reinterpret_cast<fftwf_complex *>(image_frequency_domain_channels[0]),
-      image_spatial_domain_channels[0],
-      FFTW_ESTIMATE);
-
-  BLI_SCOPED_DEFER([&]() {
-    fftwf_destroy_plan(forward_plan);
-    fftwf_destroy_plan(backward_plan);
-  });
+  const fft::RealToComplex2DPlan forward_plan(
+      spatial_size, image_spatial_domain_channels[0], image_frequency_domain_channels[0]);
+  const fft::ComplexToReal2DPlan backward_plan(
+      spatial_size, image_frequency_domain_channels[0], image_spatial_domain_channels[0]);
 
   Result convolve_input = context.create_result(input.type());
   Result convolve_kernel = context.create_result(kernel.type());
@@ -209,10 +190,8 @@ void convolve(Context &context,
   threading::parallel_for(
       forward_transform_tasks.index_range(), 1, [&](const IndexRange sub_range) {
         for (const int64_t i : sub_range) {
-          fftwf_execute_dft_r2c(
-              forward_plan,
-              forward_transform_tasks[i].input,
-              reinterpret_cast<fftwf_complex *>(forward_transform_tasks[i].output));
+          forward_plan.execute(forward_transform_tasks[i].input,
+                               forward_transform_tasks[i].output);
         }
       });
 
@@ -239,10 +218,8 @@ void convolve(Context &context,
   /* Transform channels from the frequency domain to the real domain. */
   threading::parallel_for(IndexRange(input_channels_count), 1, [&](const IndexRange sub_range) {
     for (const int64_t channel : sub_range) {
-      fftwf_execute_dft_c2r(
-          backward_plan,
-          reinterpret_cast<fftwf_complex *>(image_frequency_domain_channels[channel]),
-          image_spatial_domain_channels[channel]);
+      backward_plan.execute(image_frequency_domain_channels[channel],
+                            image_spatial_domain_channels[channel]);
     }
   });
 

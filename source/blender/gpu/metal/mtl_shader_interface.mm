@@ -43,6 +43,9 @@ MTLShaderInterface::MTLShaderInterface(const char *name,
   constant_len_ = info.specialization_constants_.size();
   ssbo_len_ = 0;
   ubo_len_ = 0;
+  for (int &buffer_index : accel_struct_buffer_index_) {
+    buffer_index = -1;
+  }
   Vector<ShaderCreateInfo::Resource> all_resources;
   all_resources.extend(info.pass_resources_);
   all_resources.extend(info.batch_resources_);
@@ -61,7 +64,7 @@ MTLShaderInterface::MTLShaderInterface(const char *name,
         ssbo_len_++;
         break;
       case ShaderCreateInfo::Resource::BindType::ACCELERATION_STRUCTURE:
-        BLI_assert_unreachable();
+        /* Not part of the `ShaderInput` list: bindings are done by slot, not by name. */
         break;
     }
   }
@@ -134,6 +137,23 @@ MTLShaderInterface::MTLShaderInterface(const char *name,
       enabled_ssbo_mask_ |= (1 << input->binding);
       vertex_buffer_mask_ &= ~(1 << (input->binding + MTL_SSBO_SLOT_OFFSET));
       input++;
+    }
+  }
+
+  /* Acceleration structures. Buffer bind indices must match the ones assigned during shader
+   * generation (see `generate_acceleration_structure`). */
+  for (const ShaderCreateInfo::Resource &res : all_resources) {
+    if (res.bind_type == ShaderCreateInfo::Resource::BindType::ACCELERATION_STRUCTURE) {
+      BLI_assert(res.slot >= 0 && res.slot < MTL_MAX_ACCELERATION_STRUCTURE_SLOTS);
+      if (res.slot < 0 || res.slot >= MTL_MAX_ACCELERATION_STRUCTURE_SLOTS) {
+        continue;
+      }
+      const int buffer_index = mtl_acceleration_structure_buffer_index(info, res.slot);
+      accel_struct_buffer_index_[res.slot] = buffer_index;
+      enabled_accel_struct_mask_ |= (1u << res.slot);
+      if (buffer_index >= 0) {
+        vertex_buffer_mask_ &= ~(1u << buffer_index);
+      }
     }
   }
 

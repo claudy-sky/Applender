@@ -27,10 +27,6 @@
 #include "libmv/logging/logging.h"
 #include "libmv/multiview/panography.h"
 
-#ifdef _MSC_VER
-#  define snprintf _snprintf
-#endif
-
 namespace libmv {
 
 namespace {

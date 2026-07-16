@@ -11,11 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <fcntl.h>
-#ifndef WIN32
-#  include <unistd.h>
-#else
-#  include <io.h>
-#endif
+#include <unistd.h>
 
 #include "IMB_imbuf.hh"
 #include "IMB_imbuf_types.hh"

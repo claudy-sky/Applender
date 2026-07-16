@@ -28,36 +28,16 @@
 #  define ccl_device_noinline_cpu ccl_device_noinline
 
 /* Forced inlining. */
-#  if defined(_WIN32) && !defined(FREE_WINDOWS)
-#    define ccl_device_inline static __forceinline
-#    define ccl_device_forceinline static __forceinline
-#    define ccl_device_inline_method __forceinline
-#    define ccl_device_template_spec template<> __forceinline
-#    define ccl_align(...) __declspec(align(__VA_ARGS__))
-#    ifdef __KERNEL_64_BIT__
-#      define ccl_try_align(...) __declspec(align(__VA_ARGS__))
-#    else /* __KERNEL_64_BIT__ */
-#      undef __KERNEL_WITH_SSE_ALIGN__
-/* No support for function arguments (error C2719). */
-#      define ccl_try_align(...)
-#    endif /* __KERNEL_64_BIT__ */
-#    define ccl_may_alias
-#    define ccl_always_inline __forceinline
-#    define ccl_never_inline __declspec(noinline)
-#  else /* _WIN32 && !FREE_WINDOWS */
-#    define ccl_device_inline static inline __attribute__((always_inline))
-#    define ccl_device_forceinline static inline __attribute__((always_inline))
-#    define ccl_device_inline_method __attribute__((always_inline))
-#    define ccl_device_template_spec template<> inline __attribute__((always_inline))
-#    define ccl_align(...) __attribute__((aligned(__VA_ARGS__)))
-#    ifndef FREE_WINDOWS64
-#      define __forceinline inline __attribute__((always_inline))
-#    endif
-#    define ccl_try_align(...) __attribute__((aligned(__VA_ARGS__)))
-#    define ccl_may_alias __attribute__((__may_alias__))
-#    define ccl_always_inline __attribute__((always_inline))
-#    define ccl_never_inline __attribute__((noinline))
-#  endif /* _WIN32 && !FREE_WINDOWS */
+#  define ccl_device_inline static inline __attribute__((always_inline))
+#  define ccl_device_forceinline static inline __attribute__((always_inline))
+#  define ccl_device_inline_method __attribute__((always_inline))
+#  define ccl_device_template_spec template<> inline __attribute__((always_inline))
+#  define ccl_align(...) __attribute__((aligned(__VA_ARGS__)))
+#  define __forceinline inline __attribute__((always_inline))
+#  define ccl_try_align(...) __attribute__((aligned(__VA_ARGS__)))
+#  define ccl_may_alias __attribute__((__may_alias__))
+#  define ccl_always_inline __attribute__((always_inline))
+#  define ccl_never_inline __attribute__((noinline))
 
 /* Address spaces for GPU. */
 #  define ccl_global

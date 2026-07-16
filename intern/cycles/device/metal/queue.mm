@@ -267,8 +267,11 @@ int MetalDeviceQueue::num_concurrent_states(const size_t state_size) const
 {
   size_t state_count = 4194304;
 
+  const AppleGPUArchitecture architecture = MetalInfo::get_apple_gpu_architecture(
+      metal_device_->mtlDevice);
+
   /* Increasing the state count doesn't notably benefit M1-family systems. */
-  if (MetalInfo::get_apple_gpu_architecture(metal_device_->mtlDevice) != APPLE_M1) {
+  if (architecture != APPLE_M1) {
     const size_t max_recommended_working_set =
         [metal_device_->mtlDevice recommendedMaxWorkingSetSize];
 
@@ -308,8 +311,11 @@ int MetalDeviceQueue::num_concurrent_states(const size_t state_size) const
 
         max_safe_state_count = (max_safe_state_count * grow_percent) / 100;
 
-        /* Limit to two "doublings" - we see diminishing returns after that. */
-        for (int i = 0; i < 2; i++) {
+        /* Limit the number of "doublings" - we see diminishing returns after two on M1/M2/M3-era
+         * GPUs. M4 and newer are allowed one extra doubling (still bounded by the working-set
+         * checks above). */
+        const int max_doublings = (architecture >= APPLE_M4) ? 3 : 2;
+        for (int i = 0; i < max_doublings; i++) {
           /* Determine whether we can double the state count, and leave enough GPU-available
            * memory. Enlarging the state size allows us to keep dispatch sizes high and minimize
            * work submission overheads. */

@@ -34,10 +34,6 @@
 #  include "BLI_timeit.hh"
 #  include <iostream>
 
-#  if WIN32 and NDEBUG
-#    pragma optimize("t", on)
-#  endif
-
 static int64_t total_count_ = 0;
 static timeit::Nanoseconds duration_;
 #endif

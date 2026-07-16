@@ -60,6 +60,7 @@ set(SRC
   intern/easing.cc
   intern/endian_switch.cc
   intern/expr_pylike_eval.cc
+  intern/fft.cc
   intern/fftw.cc
   intern/fileops.cc
   intern/fileops_c.cc
@@ -67,7 +68,6 @@ set(SRC
   intern/filereader_gzip.cc
   intern/filereader_memory.cc
   intern/filereader_zstd.cc
-  intern/fnmatch.cc
   intern/generic_vector_array.cc
   intern/generic_virtual_array.cc
   intern/generic_virtual_vector_array.cc
@@ -157,9 +157,6 @@ set(SRC
   intern/vector.cc
   intern/virtual_array.cc
   intern/voxel.cc
-  intern/winstuff.cc
-  intern/winstuff_dir.cc
-  intern/winstuff_registration.cc
   # Private headers.
   intern/BLI_mempool_private.h
 
@@ -227,6 +224,7 @@ set(SRC
   BLI_enumerable_thread_specific.hh
   BLI_execution_mode.hh
   BLI_expr_pylike_eval.hh
+  BLI_fft.hh
   BLI_fftw.hh
   BLI_fileops.hh
   BLI_fileops_types.hh
@@ -411,8 +409,6 @@ set(SRC
   BLI_virtual_array_range_spans.hh
   BLI_virtual_vector_array.hh
   BLI_voxel.hh
-  BLI_winstuff.hh
-  BLI_winstuff_com.hh
 
   # Without these files listed, they aren't known to CMake.
   ../../../extern/json/include/json.hpp
@@ -450,36 +446,14 @@ if(WITH_MEM_VALGRIND)
   add_definitions(-DWITH_MEM_VALGRIND)
 endif()
 
-if(WIN32)
-  if(WITH_BLENDER_THUMBNAILER)
-    # Needed for querying the `thumbnailer .dll` in `winstuff.c`.
-    add_definitions(-DWITH_BLENDER_THUMBNAILER)
-  endif()
-  list(APPEND INC
-    ../../../intern/uriconvert
-    ../../../intern/utfconv
-  )
-  list(APPEND LIB
-    bf_intern_uriconvert
-    bf_intern_utfconv
-    dxgi
-  )
-  list(APPEND SRC
-    intern/system_win32.cc
-  )
+if(WITH_FFT_ACCELERATE)
+  add_definitions(-DWITH_FFT_ACCELERATE)
 endif()
-
 
 if(APPLE)
   list(APPEND SRC
     intern/fileops_apple.mm
     intern/storage_apple.mm
-  )
-endif()
-
-if(UNIX AND NOT APPLE)
-  list(APPEND LIB
-    bf_intern_libc_compat
   )
 endif()
 

@@ -11,11 +11,7 @@
 #include <fcntl.h>
 #include <optional>
 
-#ifndef WIN32
-#  include <unistd.h>
-#else
-#  include <io.h>
-#endif
+#include <unistd.h>
 
 #include <ctime>
 

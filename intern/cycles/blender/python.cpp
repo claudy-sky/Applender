@@ -69,12 +69,7 @@ void debug_flags_sync_from_scene(blender::Scene &b_scene)
   flags.cpu.avx2 = get_boolean(cscene, "debug_use_cpu_avx2");
   flags.cpu.sse42 = get_boolean(cscene, "debug_use_cpu_sse42");
   flags.cpu.bvh_layout = (BVHLayout)get_enum(cscene, "debug_bvh_layout");
-  /* Synchronize CUDA flags. */
-  flags.cuda.adaptive_compile = get_boolean(cscene, "debug_use_cuda_adaptive_compile");
-  flags.hip.adaptive_compile = get_boolean(cscene, "debug_use_hip_adaptive_compile");
   flags.metal.adaptive_compile = get_boolean(cscene, "debug_use_metal_adaptive_compile");
-  /* Synchronize OptiX flags. */
-  flags.optix.use_debug = get_boolean(cscene, "debug_use_optix_debug");
   /* Synchronize Texture Cache flags. */
   flags.texture_cache.use_eviction = get_boolean(cscene, "debug_use_texture_cache_eviction");
   flags.texture_cache.preserve_unused = get_int(cscene, "debug_texture_cache_preserve_unused");
@@ -429,7 +424,7 @@ static PyObject *available_devices_func(PyObject * /*self*/, PyObject *args)
   for (size_t i = 0; i < devices.size(); i++) {
     const DeviceInfo &device = devices[i];
     const string type_name = Device::string_from_type(device.type);
-    PyObject *device_tuple = PyTuple_New(9);
+    PyObject *device_tuple = PyTuple_New(8);
     PyTuple_SET_ITEM(device_tuple, 0, pyunicode_from_string(device.description.c_str()));
     PyTuple_SET_ITEM(device_tuple, 1, pyunicode_from_string(type_name.c_str()));
     PyTuple_SET_ITEM(device_tuple, 2, pyunicode_from_string(device.id.c_str()));
@@ -437,9 +432,8 @@ static PyObject *available_devices_func(PyObject * /*self*/, PyObject *args)
     PyTuple_SET_ITEM(device_tuple, 4, PyBool_FromLong(device.use_hardware_raytracing));
     PyTuple_SET_ITEM(
         device_tuple, 5, PyBool_FromLong(device.denoisers & DENOISER_OPENIMAGEDENOISE));
-    PyTuple_SET_ITEM(device_tuple, 6, PyBool_FromLong(device.denoisers & DENOISER_OPTIX));
-    PyTuple_SET_ITEM(device_tuple, 7, PyBool_FromLong(device.has_execution_optimization));
-    PyTuple_SET_ITEM(device_tuple, 8, PyBool_FromLong(device.meets_driver_requirement));
+    PyTuple_SET_ITEM(device_tuple, 6, PyBool_FromLong(device.has_execution_optimization));
+    PyTuple_SET_ITEM(device_tuple, 7, PyBool_FromLong(device.meets_driver_requirement));
     PyTuple_SET_ITEM(ret, i, device_tuple);
   }
 
@@ -656,27 +650,12 @@ static PyObject *enable_print_stats_func(PyObject * /*self*/, PyObject * /*args*
 static PyObject *get_device_types_func(PyObject * /*self*/, PyObject * /*args*/)
 {
   const vector<DeviceType> device_types = Device::available_types();
-  bool has_cuda = false;
-  bool has_optix = false;
-  bool has_hip = false;
   bool has_metal = false;
-  bool has_oneapi = false;
-  bool has_hiprt = false;
   for (const DeviceType device_type : device_types) {
-    has_cuda |= (device_type == DEVICE_CUDA);
-    has_optix |= (device_type == DEVICE_OPTIX);
-    has_hip |= (device_type == DEVICE_HIP);
     has_metal |= (device_type == DEVICE_METAL);
-    has_oneapi |= (device_type == DEVICE_ONEAPI);
-    has_hiprt |= (device_type == DEVICE_HIPRT);
   }
-  PyObject *list = PyTuple_New(6);
-  PyTuple_SET_ITEM(list, 0, PyBool_FromLong(has_cuda));
-  PyTuple_SET_ITEM(list, 1, PyBool_FromLong(has_optix));
-  PyTuple_SET_ITEM(list, 2, PyBool_FromLong(has_hip));
-  PyTuple_SET_ITEM(list, 3, PyBool_FromLong(has_metal));
-  PyTuple_SET_ITEM(list, 4, PyBool_FromLong(has_oneapi));
-  PyTuple_SET_ITEM(list, 5, PyBool_FromLong(has_hiprt));
+  PyObject *list = PyTuple_New(1);
+  PyTuple_SET_ITEM(list, 0, PyBool_FromLong(has_metal));
   return list;
 }
 
@@ -696,20 +675,8 @@ static PyObject *set_device_override_func(PyObject * /*self*/, PyObject *arg)
   if (override == "CPU") {
     BlenderSession::device_override = DEVICE_MASK_CPU;
   }
-  else if (override == "CUDA") {
-    BlenderSession::device_override = DEVICE_MASK_CUDA;
-  }
-  else if (override == "OPTIX") {
-    BlenderSession::device_override = DEVICE_MASK_OPTIX;
-  }
-  else if (override == "HIP") {
-    BlenderSession::device_override = DEVICE_MASK_HIP;
-  }
   else if (override == "METAL") {
     BlenderSession::device_override = DEVICE_MASK_METAL;
-  }
-  else if (override == "ONEAPI") {
-    BlenderSession::device_override = DEVICE_MASK_ONEAPI;
   }
   else {
     LOG_ERROR << override << " is not a valid Cycles device.";
@@ -916,12 +883,6 @@ void *blender::CCL_python_module_init()
 #else  /* WITH_EMBREE */
   PyModule_AddObjectRef(mod, "with_embree", Py_False);
 #endif /* WITH_EMBREE */
-
-#ifdef WITH_EMBREE_GPU
-  PyModule_AddObjectRef(mod, "with_embree_gpu", Py_True);
-#else  /* WITH_EMBREE_GPU */
-  PyModule_AddObjectRef(mod, "with_embree_gpu", Py_False);
-#endif /* WITH_EMBREE_GPU */
 
   if (ccl::openimagedenoise_supported()) {
     PyModule_AddObjectRef(mod, "with_openimagedenoise", Py_True);

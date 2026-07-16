@@ -127,25 +127,13 @@ int BLI_create_symlink(const char *path, const char *path_dst) ATTR_NONNULL();
 #endif
 
 /* Keep in sync with the definition of struct `direntry` in `BLI_fileops_types.hh`. */
-#ifdef WIN32
-#  if defined(_MSC_VER)
-typedef struct _stat64 BLI_stat_t;
-#  else
-typedef struct _stat BLI_stat_t;
-#  endif
-#else
 typedef struct stat BLI_stat_t;
-#endif
 
 int BLI_fstat(int fd, BLI_stat_t *buffer) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 int BLI_stat(const char *path, BLI_stat_t *buffer) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 int64_t BLI_ftell(FILE *stream) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 int BLI_fseek(FILE *stream, int64_t offset, int whence);
 int64_t BLI_lseek(int fd, int64_t offset, int whence);
-
-#ifdef WIN32
-int BLI_wstat(const wchar_t *path, BLI_stat_t *buffer);
-#endif
 
 enum eFileAttributes {
   FILE_ATTR_READONLY = 1 << 0,        /* Read-only or Immutable. */
@@ -450,12 +438,8 @@ void *BLI_file_read_binary_as_mem(const char *filepath, size_t pad_bytes, size_t
 void BLI_file_free_lines(struct LinkNode *lines);
 
 /* This weirdo pops up in two places. */
-#if !defined(WIN32)
-#  ifndef O_BINARY
-#    define O_BINARY 0
-#  endif
-#else
-void BLI_get_short_name(char short_name[256], const char *filepath);
+#ifndef O_BINARY
+#  define O_BINARY 0
 #endif
 
 /** \} */

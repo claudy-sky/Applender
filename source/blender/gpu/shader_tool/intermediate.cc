@@ -15,20 +15,12 @@
 #include "lexit/lexit.hh"
 #include "lexit/tables.hh"
 
-#if defined(_MSC_VER)
-#  include <malloc.h>
-#endif
-
 #include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
 
-#if defined(_MSC_VER)
-#  define always_inline __forceinline
-#else
-#  define always_inline inline __attribute__((always_inline))
-#endif
+#define always_inline inline __attribute__((always_inline))
 
 namespace blender::gpu::shader::parser {
 

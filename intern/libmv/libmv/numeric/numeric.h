@@ -35,27 +35,12 @@
 #include <Eigen/QR>
 #include <Eigen/SVD>
 
-#if !defined(__MINGW64__)
-#  if defined(_WIN32) || defined(__APPLE__) || defined(__NetBSD__) ||          \
-      defined(__HAIKU__)
+#if defined(__APPLE__) || defined(__NetBSD__) || defined(__HAIKU__)
 inline void sincos(double x, double* sinx, double* cosx) {
   *sinx = sin(x);
   *cosx = cos(x);
 }
-#  endif
-#endif  // !__MINGW64__
-
-#if (defined(_WIN32) || defined(_WIN64)) && !defined(__MINGW32__)
-inline long lround(double d) {
-  return (long)(d > 0 ? d + 0.5 : ceil(d - 0.5));
-}
-#  if _MSC_VER < 1800
-inline int round(double d) {
-  return (d > 0) ? int(d + 0.5) : int(d - 0.5);
-}
-#  endif  // _MSC_VER < 1800
-typedef unsigned int uint;
-#endif  // _WIN32
+#endif
 
 namespace libmv {
 
@@ -291,76 +276,6 @@ void MeanAndVarianceAlongRows(const Mat& A,
                               Vec* mean_pointer,
                               Vec* variance_pointer);
 
-#if defined(_WIN32) && !defined(__clang__)
-// TODO(bomboze): un-#if this for both platforms once tested under Windows
-/* This solution was extensively discussed here
-   http://forum.kde.org/viewtopic.php?f=74&t=61940 */
-#  define SUM_OR_DYNAMIC(x, y)                                                 \
-    (x == Eigen::Dynamic || y == Eigen::Dynamic) ? Eigen::Dynamic : (x + y)
-
-template <typename Derived1, typename Derived2>
-struct hstack_return {
-  typedef typename Derived1::Scalar Scalar;
-  enum {
-    RowsAtCompileTime = Derived1::RowsAtCompileTime,
-    ColsAtCompileTime = SUM_OR_DYNAMIC(Derived1::ColsAtCompileTime,
-                                       Derived2::ColsAtCompileTime),
-    Options = Derived1::Flags & Eigen::RowMajorBit ? Eigen::RowMajor : 0,
-    MaxRowsAtCompileTime = Derived1::MaxRowsAtCompileTime,
-    MaxColsAtCompileTime = SUM_OR_DYNAMIC(Derived1::MaxColsAtCompileTime,
-                                          Derived2::MaxColsAtCompileTime)
-  };
-  typedef Eigen::Matrix<Scalar,
-                        RowsAtCompileTime,
-                        ColsAtCompileTime,
-                        Options,
-                        MaxRowsAtCompileTime,
-                        MaxColsAtCompileTime>
-      type;
-};
-
-template <typename Derived1, typename Derived2>
-typename hstack_return<Derived1, Derived2>::type HStack(
-    const Eigen::MatrixBase<Derived1>& lhs,
-    const Eigen::MatrixBase<Derived2>& rhs) {
-  typename hstack_return<Derived1, Derived2>::type res;
-  res.resize(lhs.rows(), lhs.cols() + rhs.cols());
-  res << lhs, rhs;
-  return res;
-};
-
-template <typename Derived1, typename Derived2>
-struct vstack_return {
-  typedef typename Derived1::Scalar Scalar;
-  enum {
-    RowsAtCompileTime = SUM_OR_DYNAMIC(Derived1::RowsAtCompileTime,
-                                       Derived2::RowsAtCompileTime),
-    ColsAtCompileTime = Derived1::ColsAtCompileTime,
-    Options = Derived1::Flags & Eigen::RowMajorBit ? Eigen::RowMajor : 0,
-    MaxRowsAtCompileTime = SUM_OR_DYNAMIC(Derived1::MaxRowsAtCompileTime,
-                                          Derived2::MaxRowsAtCompileTime),
-    MaxColsAtCompileTime = Derived1::MaxColsAtCompileTime
-  };
-  typedef Eigen::Matrix<Scalar,
-                        RowsAtCompileTime,
-                        ColsAtCompileTime,
-                        Options,
-                        MaxRowsAtCompileTime,
-                        MaxColsAtCompileTime>
-      type;
-};
-
-template <typename Derived1, typename Derived2>
-typename vstack_return<Derived1, Derived2>::type VStack(
-    const Eigen::MatrixBase<Derived1>& lhs,
-    const Eigen::MatrixBase<Derived2>& rhs) {
-  typename vstack_return<Derived1, Derived2>::type res;
-  res.resize(lhs.rows() + rhs.rows(), lhs.cols());
-  res << lhs, rhs;
-  return res;
-};
-
-#else  // _WIN32
 
 // Since it is not possible to typedef privately here, use a macro.
 // Always take dynamic columns if either side is dynamic.
@@ -412,7 +327,6 @@ Eigen::Matrix<T, COLS, ROWS> VStack(
 }
 #  undef COLS
 #  undef ROWS
-#endif  // _WIN32
 
 void HorizontalStack(const Mat& left, const Mat& right, Mat* stacked);
 
@@ -453,11 +367,7 @@ void reshape(const TMat& a, int rows, int cols, TDest* b) {
 }
 
 inline bool isnan(double i) {
-#ifdef WIN32
-  return _isnan(i) > 0;
-#else
   return std::isnan(i);
-#endif
 }
 
 /// Ceil function that has the same behavior for positive

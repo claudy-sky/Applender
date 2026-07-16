@@ -6,12 +6,6 @@
  * \ingroup imbuf
  */
 
-#ifdef _WIN32
-#  include <io.h>
-#  include <stddef.h>
-#  include <sys/types.h>
-#endif
-
 #include <cstdlib>
 
 #include "BLI_fileops.hh"

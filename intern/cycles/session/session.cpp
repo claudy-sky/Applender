@@ -239,6 +239,10 @@ void Session::run_main_render_loop()
 
 void Session::thread_run()
 {
+  /* Keep render dispatch (and the TBB workers joining this thread's arena)
+   * eligible for performance cores at full timeshare. */
+  TaskScheduler::qos_enter_render_thread();
+
   while (true) {
     {
       thread_scoped_lock session_thread_lock(session_thread_mutex_);

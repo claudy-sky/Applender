@@ -6,10 +6,6 @@
 
 /* TBB includes <windows.h>, do it ourselves first so we are sure
  * WIN32_LEAN_AND_MEAN and similar are defined beforehand. */
-#ifdef _WIN32
-#  include "util/windows.h"
-#endif
-
 #include <tbb/blocked_range2d.h>
 #include <tbb/blocked_range3d.h>
 #include <tbb/enumerable_thread_specific.h>

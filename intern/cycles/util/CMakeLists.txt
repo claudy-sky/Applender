@@ -33,7 +33,6 @@ set(SRC
   time.cpp
   transform.cpp
   transform_avx2.cpp
-  windows.cpp
 )
 
 set(LIB
@@ -148,7 +147,6 @@ set(SRC_HEADERS
   unique_ptr_vector.h
   vector.h
   version.h
-  windows.h
   xml.h
 )
 

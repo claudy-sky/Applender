@@ -14,9 +14,6 @@
 
 #include "BLI_path_utils.hh"
 #include "BLI_utildefines.hh"
-#ifdef WIN32
-#  include "BLI_string.hh" /* BLI_strcasecmp */
-#endif
 
 #include "bpy_traceback.hh"
 

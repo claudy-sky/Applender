@@ -15,10 +15,6 @@
 
 #include "BLI_fileops.hh"
 
-#ifdef WIN32
-#  include "BLI_winstuff.hh"
-#endif
-
 #include "BLT_translation.hh"
 
 #include "DNA_modifier_types.h"

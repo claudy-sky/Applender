@@ -274,17 +274,8 @@ enum GHOST_TWindowOrder { GHOST_kWindowOrderTop = 0, GHOST_kWindowOrderBottom };
 
 enum GHOST_TDrawingContextType {
   GHOST_kDrawingContextTypeNone = 0,
-#if defined(WITH_OPENGL_BACKEND)
-  GHOST_kDrawingContextTypeOpenGL,
-#endif
-#ifdef WIN32
-  GHOST_kDrawingContextTypeD3D,
-#endif
 #if defined(__APPLE__) && defined(WITH_METAL_BACKEND)
   GHOST_kDrawingContextTypeMetal,
-#endif
-#ifdef WITH_VULKAN_BACKEND
-  GHOST_kDrawingContextTypeVulkan,
 #endif
 };
 

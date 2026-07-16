@@ -7,8 +7,6 @@ set(INC
   dummy
   intern
   metal
-  opengl
-  vulkan
   ../makesrna
 
   # For theme color access.
@@ -29,7 +27,6 @@ set(INC
   ../draw/intern
   ../draw/intern/shaders
   metal/kernels
-  vulkan/shaders
   shaders/infos
 
 
@@ -44,14 +41,6 @@ set(INC
 
 if(WITH_BUILDINFO)
   add_definitions(-DWITH_BUILDINFO)
-endif()
-
-if(WITH_RENDERDOC)
-  list(APPEND INC
-    ../../../extern/renderdoc/include
-    ../../../intern/renderdoc_dynload/include
-  )
-  add_definitions(-DWITH_RENDERDOC)
 endif()
 
 if(WITH_GPU_SHADER_ASSERT)
@@ -201,188 +190,6 @@ set(SRC
   dummy/dummy_vertex_buffer.hh
 )
 
-set(OPENGL_SRC
-
-  opengl/gl_backend.cc
-  opengl/gl_batch.cc
-  opengl/gl_compilation_subprocess.cc
-  opengl/gl_compute.cc
-  opengl/gl_context.cc
-  opengl/gl_debug.cc
-  opengl/gl_framebuffer.cc
-  opengl/gl_immediate.cc
-  opengl/gl_index_buffer.cc
-  opengl/gl_query.cc
-  opengl/gl_shader.cc
-  opengl/gl_shader_interface.cc
-  opengl/gl_shader_log.cc
-  opengl/gl_state.cc
-  opengl/gl_storage_buffer.cc
-  opengl/gl_texture.cc
-  opengl/gl_texture_pool.cc
-  opengl/gl_uniform_buffer.cc
-  opengl/gl_vertex_array.cc
-  opengl/gl_vertex_buffer.cc
-
-  opengl/gl_backend.hh
-  opengl/gl_batch.hh
-  opengl/gl_compilation_subprocess.hh
-  opengl/gl_compute.hh
-  opengl/gl_context.hh
-  opengl/gl_debug.hh
-  opengl/gl_framebuffer.hh
-  opengl/gl_immediate.hh
-  opengl/gl_index_buffer.hh
-  opengl/gl_primitive.hh
-  opengl/gl_query.hh
-  opengl/gl_shader.hh
-  opengl/gl_shader_interface.hh
-  opengl/gl_state.hh
-  opengl/gl_storage_buffer.hh
-  opengl/gl_texture.hh
-  opengl/gl_texture_pool.hh
-  opengl/gl_uniform_buffer.hh
-  opengl/gl_vertex_array.hh
-  opengl/gl_vertex_buffer.hh
-)
-
-set(VULKAN_SRC
-  vulkan/vk_backend.cc
-  vulkan/vk_batch.cc
-  vulkan/vk_buffer.cc
-  vulkan/vk_buffer_pool.cc
-  vulkan/vk_common.cc
-  vulkan/vk_context.cc
-  vulkan/vk_data_conversion.cc
-  vulkan/vk_debug.cc
-  vulkan/vk_descriptor_pools.cc
-  vulkan/vk_descriptor_set.cc
-  vulkan/vk_descriptor_set_layouts.cc
-  vulkan/vk_device.cc
-  vulkan/vk_device_submission.cc
-  vulkan/vk_fence.cc
-  vulkan/vk_framebuffer.cc
-  vulkan/vk_image_view.cc
-  vulkan/vk_immediate.cc
-  vulkan/vk_index_buffer.cc
-  vulkan/vk_memory_layout.cc
-  vulkan/vk_memory_pool.cc
-  vulkan/vk_pipeline_pool.cc
-  vulkan/vk_pixel_buffer.cc
-  vulkan/vk_push_constants.cc
-  vulkan/vk_query.cc
-  vulkan/vk_ray_tracing.cc
-  vulkan/render_graph/nodes/vk_pipeline_data.cc
-  vulkan/render_graph/vk_command_buffer_wrapper.cc
-  vulkan/render_graph/vk_command_builder.cc
-  vulkan/render_graph/vk_render_graph.cc
-  vulkan/render_graph/vk_render_graph_links.cc
-  vulkan/render_graph/vk_resource_access_info.cc
-  vulkan/render_graph/vk_resource_state_tracker.cc
-  vulkan/render_graph/vk_scheduler.cc
-  vulkan/vk_resource_pool.cc
-  vulkan/vk_sampler.cc
-  vulkan/vk_samplers.cc
-  vulkan/vk_shader.cc
-  vulkan/vk_shader_compiler.cc
-  vulkan/vk_shader_interface.cc
-  vulkan/vk_shader_log.cc
-  vulkan/vk_shader_module.cc
-  vulkan/vk_staging_buffer.cc
-  vulkan/vk_state_manager.cc
-  vulkan/vk_storage_buffer.cc
-  vulkan/vk_streaming_buffer.cc
-  vulkan/vk_texture.cc
-  vulkan/vk_texture_pool.cc
-  vulkan/vk_to_string.cc
-  vulkan/vk_uniform_buffer.cc
-  vulkan/vk_vertex_attribute_object.cc
-  vulkan/vk_vertex_attribute_object_cache.cc
-  vulkan/vk_vertex_buffer.cc
-
-  vulkan/vk_backend.hh
-  vulkan/vk_batch.hh
-  vulkan/vk_buffer.hh
-  vulkan/vk_buffer_pool.hh
-  vulkan/vk_common.hh
-  vulkan/vk_context.hh
-  vulkan/vk_data_conversion.hh
-  vulkan/vk_debug.hh
-  vulkan/vk_descriptor_pools.hh
-  vulkan/vk_descriptor_set.hh
-  vulkan/vk_descriptor_set_layouts.hh
-  vulkan/vk_device.hh
-  vulkan/vk_fence.hh
-  vulkan/vk_framebuffer.hh
-  vulkan/vk_ghost_api.hh
-  vulkan/vk_graphics_pipeline.hh
-  vulkan/vk_image_view.hh
-  vulkan/vk_immediate.hh
-  vulkan/vk_index_buffer.hh
-  vulkan/vk_memory.hh
-  vulkan/vk_memory_layout.hh
-  vulkan/vk_memory_pool.hh
-  vulkan/vk_pipeline_pool.hh
-  vulkan/vk_pixel_buffer.hh
-  vulkan/vk_push_constants.hh
-  vulkan/vk_query.hh
-  vulkan/vk_ray_tracing.hh
-  vulkan/render_graph/nodes/vk_begin_query_node.hh
-  vulkan/render_graph/nodes/vk_begin_rendering_node.hh
-  vulkan/render_graph/nodes/vk_build_acceleration_structure_node.hh
-  vulkan/render_graph/nodes/vk_blit_image_node.hh
-  vulkan/render_graph/nodes/vk_clear_attachments_node.hh
-  vulkan/render_graph/nodes/vk_clear_color_image_node.hh
-  vulkan/render_graph/nodes/vk_clear_depth_stencil_image_node.hh
-  vulkan/render_graph/nodes/vk_copy_buffer_node.hh
-  vulkan/render_graph/nodes/vk_copy_buffer_to_image_node.hh
-  vulkan/render_graph/nodes/vk_copy_image_node.hh
-  vulkan/render_graph/nodes/vk_copy_image_to_buffer_node.hh
-  vulkan/render_graph/nodes/vk_dispatch_indirect_node.hh
-  vulkan/render_graph/nodes/vk_dispatch_node.hh
-  vulkan/render_graph/nodes/vk_draw_indexed_indirect_node.hh
-  vulkan/render_graph/nodes/vk_draw_indexed_node.hh
-  vulkan/render_graph/nodes/vk_draw_indirect_node.hh
-  vulkan/render_graph/nodes/vk_draw_node.hh
-  vulkan/render_graph/nodes/vk_end_query_node.hh
-  vulkan/render_graph/nodes/vk_end_rendering_node.hh
-  vulkan/render_graph/nodes/vk_fill_buffer_node.hh
-  vulkan/render_graph/nodes/vk_node_info.hh
-  vulkan/render_graph/nodes/vk_pipeline_data.hh
-  vulkan/render_graph/nodes/vk_reset_query_pool_node.hh
-  vulkan/render_graph/nodes/vk_synchronization_node.hh
-  vulkan/render_graph/nodes/vk_update_buffer_node.hh
-  vulkan/render_graph/nodes/vk_update_mipmaps_node.hh
-  vulkan/render_graph/vk_command_buffer_wrapper.hh
-  vulkan/render_graph/vk_command_builder.hh
-  vulkan/render_graph/vk_render_graph.hh
-  vulkan/render_graph/vk_render_graph_links.hh
-  vulkan/render_graph/vk_render_graph_node.hh
-  vulkan/render_graph/vk_resource_access_info.hh
-  vulkan/render_graph/vk_resource_state_tracker.hh
-  vulkan/render_graph/vk_scheduler.hh
-  vulkan/vk_resource_pool.hh
-  vulkan/vk_sampler.hh
-  vulkan/vk_samplers.hh
-  vulkan/vk_shader.hh
-  vulkan/vk_shader_compiler.hh
-  vulkan/vk_shader_interface.hh
-  vulkan/vk_shader_log.hh
-  vulkan/vk_shader_module.hh
-  vulkan/vk_staging_buffer.hh
-  vulkan/vk_state_manager.hh
-  vulkan/vk_storage_buffer.hh
-  vulkan/vk_streaming_buffer.hh
-  vulkan/vk_texture.hh
-  vulkan/vk_texture_pool.hh
-  vulkan/vk_to_string.hh
-  vulkan/vk_uniform_buffer.hh
-  vulkan/vk_vertex_attribute_object.hh
-  vulkan/vk_vertex_attribute_object_cache.hh
-  vulkan/vk_vertex_buffer.hh
-  vulkan/vk_vertex_input_description.hh
-)
-
 set(METAL_SRC
   metal/mtl_backend.mm
   metal/mtl_batch.mm
@@ -395,6 +202,7 @@ set(METAL_SRC
   metal/mtl_memory.mm
   metal/mtl_push_constant.cc
   metal/mtl_query.mm
+  metal/mtl_ray_tracing.mm
   metal/mtl_shader.mm
   metal/mtl_shader_generate.cc
   metal/mtl_shader_interface.mm
@@ -422,6 +230,7 @@ set(METAL_SRC
   metal/mtl_pso_descriptor_state.hh
   metal/mtl_push_constant.hh
   metal/mtl_query.hh
+  metal/mtl_ray_tracing.hh
   metal/mtl_shader.hh
   metal/mtl_shader_generate.hh
   metal/mtl_shader_interface.hh
@@ -451,44 +260,8 @@ set(LIB
 )
 
 # Select Backend source based on availability
-if(WITH_OPENGL_BACKEND)
-  list(APPEND SRC
-    ${OPENGL_SRC}
-  )
-  list(APPEND LIB
-    PRIVATE bf::dependencies::epoxy
-  )
-  add_definitions(-DWITH_OPENGL_BACKEND)
-endif()
-
 if(WITH_METAL_BACKEND)
   list(APPEND SRC ${METAL_SRC})
-endif()
-
-
-if(WITH_VULKAN_BACKEND)
-  list(APPEND INC
-    ../../../extern/volk
-    ../../../extern/vulkan_memory_allocator
-  )
-  list(APPEND INC_SYS
-    ${VULKAN_INCLUDE_DIRS}
-    ${SHADERC_INCLUDE_DIRS}
-  )
-  list(APPEND SRC
-    ${VULKAN_SRC}
-  )
-  list(APPEND LIB
-    PRIVATE bf::extern::vulkan_memory_allocator
-    PRIVATE bf::extern::xxhash
-    PRIVATE bf::dependencies::optional::vulkan
-    PRIVATE bf::dependencies::optional::shaderc
-    ${SHADERC_LIBRARIES}
-    extern_volk
-    extern_vulkan_memory_allocator
-  )
-
-  add_definitions(-DWITH_VULKAN_BACKEND)
 endif()
 
 set(GLSL_SRC
@@ -829,12 +602,6 @@ set(MSL_SRC
   metal/kernels/compute_texture_read.msl
 )
 
-set(VULKAN_BACKEND_GLSL_SRC
-  vulkan/shaders/vk_backbuffer_blit_infos.hh
-
-  vulkan/shaders/vk_backbuffer_blit_comp.glsl
-)
-
 if(WITH_GTESTS)
   if(WITH_GPU_BACKEND_TESTS)
     list(APPEND GLSL_SRC ${GLSL_TEST_SRC})
@@ -850,10 +617,6 @@ if(WITH_METAL_BACKEND)
   endforeach()
 endif()
 
-if(WITH_VULKAN_BACKEND)
-  list(APPEND GLSL_SRC ${VULKAN_BACKEND_GLSL_SRC})
-endif()
-
 set(GLSL_INC
   .
 
@@ -862,8 +625,6 @@ set(GLSL_INC
   shaders/common
   shaders/infos
   shaders/material
-
-  vulkan/shaders
 )
 
 set(GLSL_C "")
@@ -943,11 +704,6 @@ if(WITH_OPENSUBDIV)
   target_link_libraries(bf_gpu PUBLIC bf_osd_shaders)
 endif()
 
-if(WITH_RENDERDOC)
-  target_link_libraries(bf_gpu PUBLIC bf_intern_renderdoc_dynload)
-endif()
-
-
 if(CXX_WARN_NO_SUGGEST_OVERRIDE)
   target_compile_options(bf_gpu PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wsuggest-override>)
 endif()
@@ -980,20 +736,6 @@ if(WITH_GTESTS)
       tests/texture_test.cc
       tests/texture_view_test.cc
       tests/vertex_buffer_test.cc
-    )
-  endif()
-
-  if(WITH_VULKAN_BACKEND)
-    list(APPEND TEST_SRC
-      vulkan/tests/vk_data_conversion_test.cc
-      vulkan/tests/vk_memory_layout_test.cc
-      vulkan/render_graph/tests/vk_render_graph_test_compute.cc
-      vulkan/render_graph/tests/vk_render_graph_test_present.cc
-      vulkan/render_graph/tests/vk_render_graph_test_render.cc
-      vulkan/render_graph/tests/vk_render_graph_test_scheduler.cc
-      vulkan/render_graph/tests/vk_render_graph_test_transfer.cc
-
-      vulkan/render_graph/tests/vk_render_graph_test_types.hh
     )
   endif()
 

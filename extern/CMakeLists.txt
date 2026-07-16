@@ -59,10 +59,6 @@ if(WITH_BINRELOC)
   add_subdirectory(binreloc)
 endif()
 
-if(WITH_GHOST_X11 AND WITH_GHOST_XDND)
-  add_subdirectory(xdnd)
-endif()
-
 if(WITH_LIBMV OR WITH_GTESTS)
   if(NOT WITH_SYSTEM_GFLAGS)
     add_subdirectory(gflags)
@@ -89,11 +85,6 @@ endif()
 
 if(WITH_MOD_FLUID)
   add_subdirectory(mantaflow)
-endif()
-
-if(WITH_VULKAN_BACKEND)
-  add_subdirectory(vulkan_memory_allocator)
-  add_subdirectory(volk)
 endif()
 
 if(WITH_TRACY)

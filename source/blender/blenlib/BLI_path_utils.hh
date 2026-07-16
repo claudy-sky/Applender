@@ -189,11 +189,6 @@ int BLI_path_normalize_native(char *path) ATTR_NONNULL(1);
  */
 int BLI_path_normalize_dir(char *dir, size_t dir_maxncpy) ATTR_NONNULL(1);
 
-#if defined(WIN32)
-void BLI_path_normalize_unc_16(wchar_t *path_16);
-void BLI_path_normalize_unc(char *path, int path_maxncpy);
-#endif
-
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -533,13 +528,8 @@ bool BLI_path_extension_ensure(char *path, size_t path_maxncpy, const char *ext)
  * \{ */
 
 /* Path string comparisons: case-insensitive for Windows, case-sensitive otherwise. */
-#if defined(WIN32)
-#  define BLI_path_cmp BLI_strcasecmp
-#  define BLI_path_ncmp BLI_strncasecmp
-#else
-#  define BLI_path_cmp strcmp
-#  define BLI_path_ncmp strncmp
-#endif
+#define BLI_path_cmp strcmp
+#define BLI_path_ncmp strncmp
 
 /**
  * Returns the result of #BLI_path_cmp with both paths normalized and slashes made native.
@@ -565,9 +555,6 @@ bool BLI_path_contains(const char *container_path, const char *containee_path)
 /** \name Program Specific Path Functions
  * \{ */
 
-#ifdef _WIN32
-bool BLI_path_program_extensions_add_win32(char *program_name, size_t program_name_maxncpy);
-#endif
 /**
  * Search for a binary (executable)
  */
@@ -724,33 +711,20 @@ bool BLI_path_abs_from_cwd(char *path, size_t path_maxncpy) ATTR_NONNULL(1);
 /** \name Native Slash Defines & Checks
  * \{ */
 
-#ifdef WIN32
-constexpr char SEP = '\\';
-constexpr char ALTSEP = '/';
-#  define SEP_STR "\\"
-#  define ALTSEP_STR "/"
-#else
 constexpr char SEP = '/';
 constexpr char ALTSEP = '\\';
-#  define SEP_STR "/"
-#  define ALTSEP_STR "\\"
-#endif
+#define SEP_STR "/"
+#define ALTSEP_STR "\\"
 
 /**
  * Return true if the slash can be used as a separator on this platform.
  */
 BLI_INLINE bool BLI_path_slash_is_native_compat(const char ch)
 {
-  /* On UNIX it only makes sense to treat `/` as a path separator.
-   * On WIN32 either may be used. */
+  /* On UNIX it only makes sense to treat `/` as a path separator. */
   if (ch == SEP) {
     return true;
   }
-#ifdef WIN32
-  if (ch == ALTSEP) {
-    return true;
-  }
-#endif
   return false;
 }
 

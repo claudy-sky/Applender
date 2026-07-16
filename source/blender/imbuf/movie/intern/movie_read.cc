@@ -12,6 +12,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <sys/types.h>
 
 #include "BLI_path_utils.hh"
@@ -43,12 +44,23 @@
 extern "C" {
 #  include <libavcodec/avcodec.h>
 #  include <libavformat/avformat.h>
+#  include <libavutil/hwcontext.h>
 #  include <libavutil/imgutils.h>
 #  include <libavutil/rational.h>
 #  include <libswscale/swscale.h>
 
 #  include "ffmpeg_compat.h"
 }
+
+/* Opportunistic VideoToolbox hardware decoding on macOS. Frames are
+ * downloaded into regular memory right after decode, so everything past
+ * receiving a frame runs the exact same code as software decoding.
+ * Runtime checks keep pure software decoding when the linked ffmpeg build
+ * lacks VideoToolbox support; FFmpeg 4.0+ needed for avcodec_get_hw_config().
+ * Escape hatch: set BLENDER_FFMPEG_NO_HWDEC=1 in the environment. */
+#  if defined(__APPLE__) && (LIBAVCODEC_VERSION_MAJOR >= 58)
+#    define FFMPEG_USE_VIDEOTOOLBOX_HWDEC
+#  endif
 
 #endif /* WITH_FFMPEG */
 
@@ -372,6 +384,195 @@ static AVFormatContext *init_format_context_vpx_workarounds(const char *filepath
   return format_ctx;
 }
 
+static void ffmpeg_codec_thread_setup(AVCodecContext *ctx, const AVCodec *codec)
+{
+  if (codec->capabilities & AV_CODEC_CAP_OTHER_THREADS) {
+    ctx->thread_count = 0;
+  }
+  else {
+    ctx->thread_count = MOV_thread_count();
+  }
+
+  if (codec->capabilities & AV_CODEC_CAP_FRAME_THREADS) {
+    ctx->thread_type = FF_THREAD_FRAME;
+  }
+  else if (codec->capabilities & AV_CODEC_CAP_SLICE_THREADS) {
+    ctx->thread_type = FF_THREAD_SLICE;
+  }
+}
+
+#  ifdef FFMPEG_USE_VIDEOTOOLBOX_HWDEC
+
+static AVPixelFormat ffmpeg_hwdec_get_format(AVCodecContext *ctx, const AVPixelFormat *formats)
+{
+  MovieReader *anim = static_cast<MovieReader *>(ctx->opaque);
+  if (anim != nullptr && anim->hwdec_active) {
+    for (int i = 0; formats[i] != AV_PIX_FMT_NONE; i++) {
+      if (formats[i] == AV_PIX_FMT_VIDEOTOOLBOX) {
+        return AV_PIX_FMT_VIDEOTOOLBOX;
+      }
+    }
+    /* VideoToolbox can not handle this stream (this is also reached when
+     * libavcodec re-invokes the callback after a failed hardware session
+     * setup): stay on software decoding for the rest of this file handle. */
+    anim->hwdec_active = false;
+  }
+  return avcodec_default_get_format(ctx, formats);
+}
+
+/* Set up opportunistic VideoToolbox decoding on the not yet opened codec
+ * context. On any failure the context is left in its default, pure software
+ * decoding state. */
+static void ffmpeg_hwdec_try_init(MovieReader *anim, AVCodecContext *ctx, const AVCodec *codec)
+{
+  const char *no_hwdec = getenv("BLENDER_FFMPEG_NO_HWDEC");
+  if (no_hwdec != nullptr && no_hwdec[0] != '\0') {
+    return;
+  }
+  /* The de-interlace path reads frames in the stream's pixel format, which
+   * downloaded hardware frames are not in. */
+  if (flag_is_set(anim->ib_flags, ImBufFlags::Deinterlace)) {
+    return;
+  }
+  if (!ELEM(codec->id, AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_PRORES)) {
+    return;
+  }
+  /* Hardware surfaces have no alpha; keep software decoding for streams that
+   * carry it (e.g. ProRes 4444 with alpha). */
+  const AVPixFmtDescriptor *sw_desc = av_pix_fmt_desc_get(ctx->pix_fmt);
+  if (sw_desc == nullptr || (sw_desc->flags & AV_PIX_FMT_FLAG_ALPHA) != 0) {
+    return;
+  }
+  /* Runtime check that the linked ffmpeg has the VideoToolbox hwaccel for
+   * this codec compiled in. */
+  bool supported = false;
+  for (int i = 0;; i++) {
+    const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
+    if (config == nullptr) {
+      break;
+    }
+    if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 &&
+        config->device_type == AV_HWDEVICE_TYPE_VIDEOTOOLBOX)
+    {
+      supported = true;
+      break;
+    }
+  }
+  if (!supported) {
+    return;
+  }
+
+  AVBufferRef *device_ctx = nullptr;
+  if (av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nullptr, nullptr, 0) < 0)
+  {
+    return;
+  }
+  /* The context owns this reference and releases it in avcodec_free_context. */
+  ctx->hw_device_ctx = device_ctx;
+  ctx->opaque = anim;
+  ctx->get_format = ffmpeg_hwdec_get_format;
+  anim->hwdec_active = true;
+  CLOG_DEBUG(&LOG, "Trying VideoToolbox hardware decoding for %s", anim->filepath);
+}
+
+/* Reopen the codec context for pure software decoding, after hardware
+ * decoding failed mid-stream. Decoding resumes at the next key frame; the
+ * caller drops the current frame. */
+static void ffmpeg_hwdec_fallback_to_software(MovieReader *anim)
+{
+  anim->hwdec_active = false;
+  CLOG_DEBUG(&LOG, "VideoToolbox decode failed, falling back to software for %s", anim->filepath);
+
+  AVCodecContext *ctx = avcodec_alloc_context3(nullptr);
+  if (ctx == nullptr) {
+    /* Keep the current context; decode errors are handled as usual. */
+    return;
+  }
+  const AVStream *video_stream = anim->pFormatCtx->streams[anim->videoStream];
+  avcodec_parameters_to_context(ctx, video_stream->codecpar);
+  ctx->workaround_bugs = FF_BUG_AUTODETECT;
+  ffmpeg_codec_thread_setup(ctx, anim->pCodec);
+  if (avcodec_open2(ctx, anim->pCodec, nullptr) < 0) {
+    avcodec_free_context(&ctx);
+    return;
+  }
+  avcodec_free_context(&anim->pCodecCtx);
+  anim->pCodecCtx = ctx;
+}
+
+/* Download the hardware decoded frame in anim->pFrame into a regular memory
+ * frame. Returns false when that fails, in which case the frame is unusable. */
+static bool ffmpeg_hwdec_retrieve_frame(MovieReader *anim)
+{
+  if (anim->pFrame->format != AV_PIX_FMT_VIDEOTOOLBOX) {
+    return true;
+  }
+  AVFrame *sw_frame = av_frame_alloc();
+  if (sw_frame == nullptr) {
+    return false;
+  }
+  /* Leave sw_frame->format unset: the transfer then uses the device's native
+   * download format (e.g. NV12), which is a lossless copy of the surface.
+   * Frame properties (pts, color info, ...) must be copied over manually. */
+  if (av_hwframe_transfer_data(sw_frame, anim->pFrame, 0) < 0 ||
+      av_frame_copy_props(sw_frame, anim->pFrame) < 0)
+  {
+    av_frame_free(&sw_frame);
+    return false;
+  }
+
+  if (anim->img_convert_ctx_hw == nullptr || anim->hwdec_transfer_format != sw_frame->format) {
+    if (anim->img_convert_ctx_hw != nullptr) {
+      ffmpeg_sws_release_context(anim->img_convert_ctx_hw);
+      anim->img_convert_ctx_hw = nullptr;
+    }
+    /* Same parameters as `img_convert_ctx` in #startffmpeg, except for the
+     * source pixel format. */
+    anim->img_convert_ctx_hw = ffmpeg_sws_get_context(
+        sw_frame->width,
+        sw_frame->height,
+        sw_frame->format,
+        anim->pCodecCtx->color_range == AVCOL_RANGE_JPEG,
+        anim->pCodecCtx->colorspace,
+        anim->pFrameRGB->width,
+        anim->pFrameRGB->height,
+        anim->pFrameRGB->format,
+        false,
+        -1,
+        SWS_POINT | SWS_FULL_CHR_H_INT | SWS_ACCURATE_RND);
+    anim->hwdec_transfer_format = sw_frame->format;
+    if (anim->img_convert_ctx_hw == nullptr) {
+      av_frame_free(&sw_frame);
+      return false;
+    }
+  }
+
+  av_frame_unref(anim->pFrame);
+  av_frame_move_ref(anim->pFrame, sw_frame);
+  av_frame_free(&sw_frame);
+  return true;
+}
+
+#  endif /* FFMPEG_USE_VIDEOTOOLBOX_HWDEC */
+
+/* Receive a decoded frame into anim->pFrame, downloading it from the
+ * hardware decoder when one is used. Returns true when a complete frame is
+ * available. */
+static bool ffmpeg_receive_decoded_frame(MovieReader *anim)
+{
+  bool frame_complete = avcodec_receive_frame(anim->pCodecCtx, anim->pFrame) == 0;
+#  ifdef FFMPEG_USE_VIDEOTOOLBOX_HWDEC
+  if (frame_complete && !ffmpeg_hwdec_retrieve_frame(anim)) {
+    /* The frame data is stuck on the GPU: drop it and permanently switch
+     * this file handle to software decoding. */
+    av_frame_unref(anim->pFrame);
+    frame_complete = false;
+    ffmpeg_hwdec_fallback_to_software(anim);
+  }
+#  endif
+  return frame_complete;
+}
+
 static int startffmpeg(MovieReader *anim)
 {
   if (anim == nullptr) {
@@ -392,26 +593,19 @@ static int startffmpeg(MovieReader *anim)
   avcodec_parameters_to_context(pCodecCtx, video_stream->codecpar);
   pCodecCtx->workaround_bugs = FF_BUG_AUTODETECT;
 
-  if (pCodec->capabilities & AV_CODEC_CAP_OTHER_THREADS) {
-    pCodecCtx->thread_count = 0;
-  }
-  else {
-    pCodecCtx->thread_count = MOV_thread_count();
-  }
+  ffmpeg_codec_thread_setup(pCodecCtx, pCodec);
 
-  if (pCodec->capabilities & AV_CODEC_CAP_FRAME_THREADS) {
-    pCodecCtx->thread_type = FF_THREAD_FRAME;
-  }
-  else if (pCodec->capabilities & AV_CODEC_CAP_SLICE_THREADS) {
-    pCodecCtx->thread_type = FF_THREAD_SLICE;
-  }
+#  ifdef FFMPEG_USE_VIDEOTOOLBOX_HWDEC
+  ffmpeg_hwdec_try_init(anim, pCodecCtx, pCodec);
+#  endif
 
   if (avcodec_open2(pCodecCtx, pCodec, nullptr) < 0) {
+    avcodec_free_context(&pCodecCtx);
     avformat_close_input(&pFormatCtx);
     return -1;
   }
   if (pCodecCtx->pix_fmt == AV_PIX_FMT_NONE) {
-    avcodec_free_context(&anim->pCodecCtx);
+    avcodec_free_context(&pCodecCtx);
     avformat_close_input(&pFormatCtx);
     return -1;
   }
@@ -730,13 +924,22 @@ static void ffmpeg_postprocess(MovieReader *anim, AVFrame *input, ImBuf *ibuf)
     }
   }
 
+  SwsContext *convert_ctx = anim->img_convert_ctx;
+#  ifdef FFMPEG_USE_VIDEOTOOLBOX_HWDEC
+  if (anim->img_convert_ctx_hw != nullptr && input->format == anim->hwdec_transfer_format) {
+    /* Frame was downloaded from the hardware decoder and is not in the
+     * stream's software pixel format. */
+    convert_ctx = anim->img_convert_ctx_hw;
+  }
+#  endif
+
   bool already_rotated = false;
   if (anim->is_float) {
     /* Float images are converted into planar GBRA layout by swscale (since
      * it does not support direct YUV->RGBA float interleaved conversion).
      * Do vertical flip and interleave into RGBA manually. */
     /* Decode, then do vertical flip into destination. */
-    ffmpeg_sws_scale_frame(anim->img_convert_ctx, anim->pFrameRGB, input);
+    ffmpeg_sws_scale_frame(convert_ctx, anim->pFrameRGB, input);
 
     float_planar_to_interleaved(anim->pFrameRGB, anim->video_rotation, ibuf);
     already_rotated = true;
@@ -763,14 +966,14 @@ static void ffmpeg_postprocess(MovieReader *anim, AVFrame *input, ImBuf *ibuf)
       anim->pFrameRGB->linesize[0] = -ibuf_linesize;
       anim->pFrameRGB->data[0] = ibuf->byte_data_for_write() + (ibuf->y - 1) * ibuf_linesize;
 
-      ffmpeg_sws_scale_frame(anim->img_convert_ctx, anim->pFrameRGB, input);
+      ffmpeg_sws_scale_frame(convert_ctx, anim->pFrameRGB, input);
 
       anim->pFrameRGB->linesize[0] = rgb_linesize;
       anim->pFrameRGB->data[0] = rgb_data;
     }
     else {
       /* Decode, then do vertical flip into destination. */
-      ffmpeg_sws_scale_frame(anim->img_convert_ctx, anim->pFrameRGB, input);
+      ffmpeg_sws_scale_frame(convert_ctx, anim->pFrameRGB, input);
 
       /* Use negative line size to do vertical image flip. */
       const int src_linesize[4] = {-rgb_linesize, 0, 0, 0};
@@ -893,7 +1096,7 @@ static int ffmpeg_decode_video_frame(MovieReader *anim)
 
   /* Sometimes, decoder returns more than one frame per sent packet. Check if frames are available.
    * This frames must be read, otherwise decoding will fail. See #91405. */
-  anim->pFrame_complete = avcodec_receive_frame(anim->pCodecCtx, anim->pFrame) == 0;
+  anim->pFrame_complete = ffmpeg_receive_decoded_frame(anim);
   if (anim->pFrame_complete) {
     av_log(anim->pFormatCtx, AV_LOG_DEBUG, "  DECODE FROM CODEC BUFFER\n");
     ffmpeg_decode_store_frame_pts(anim);
@@ -920,7 +1123,7 @@ static int ffmpeg_decode_video_frame(MovieReader *anim)
            (anim->cur_packet->flags & AV_PKT_FLAG_KEY) ? " KEY" : "");
 
     avcodec_send_packet(anim->pCodecCtx, anim->cur_packet);
-    anim->pFrame_complete = avcodec_receive_frame(anim->pCodecCtx, anim->pFrame) == 0;
+    anim->pFrame_complete = ffmpeg_receive_decoded_frame(anim);
 
     if (anim->pFrame_complete) {
       ffmpeg_decode_store_frame_pts(anim);
@@ -933,7 +1136,7 @@ static int ffmpeg_decode_video_frame(MovieReader *anim)
   if (rval == AVERROR_EOF) {
     /* Flush any remaining frames out of the decoder. */
     avcodec_send_packet(anim->pCodecCtx, nullptr);
-    anim->pFrame_complete = avcodec_receive_frame(anim->pCodecCtx, anim->pFrame) == 0;
+    anim->pFrame_complete = ffmpeg_receive_decoded_frame(anim);
 
     if (anim->pFrame_complete) {
       ffmpeg_decode_store_frame_pts(anim);
@@ -1328,7 +1531,13 @@ static void free_anim_ffmpeg(MovieReader *anim)
     }
     av_frame_free(&anim->pFrameDeinterlaced);
     ffmpeg_sws_release_context(anim->img_convert_ctx);
+    if (anim->img_convert_ctx_hw != nullptr) {
+      ffmpeg_sws_release_context(anim->img_convert_ctx_hw);
+      anim->img_convert_ctx_hw = nullptr;
+    }
   }
+  anim->hwdec_transfer_format = -1; /* AV_PIX_FMT_NONE */
+  anim->hwdec_active = false;
   anim->duration_in_frames = 0;
 }
 

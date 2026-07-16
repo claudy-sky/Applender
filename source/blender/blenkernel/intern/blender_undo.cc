@@ -9,11 +9,7 @@
  * DNA level diffing for undo.
  */
 
-#ifndef _WIN32
-#  include <unistd.h> /* for read close */
-#else
-#  include <io.h> /* for open close read */
-#endif
+#include <unistd.h> /* for read close */
 
 #include <cerrno>
 #include <cstdio>

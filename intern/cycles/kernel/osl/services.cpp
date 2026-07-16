@@ -43,13 +43,7 @@ OSLRenderServices::~OSLRenderServices() = default;
 
 int OSLRenderServices::supports(string_view feature) const
 {
-#ifdef WITH_OPTIX
-  if (feature == "OptiX") {
-    return device_type_ == DEVICE_OPTIX;
-  }
-#else
   (void)feature;
-#endif
 
   return false;
 }

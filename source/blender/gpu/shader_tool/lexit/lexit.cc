@@ -9,14 +9,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
-#ifdef _MSC_VER
-#  include <intrin.h>
-#endif
 
 #if defined(__clang__) || defined(__GNUC__)
 #  define count_bits_i(i) __builtin_popcount(i)
-#elif defined(_MSC_VER)
-#  define count_bits_i(i) __popcnt(i)
 #else
 #  include <bitset>
 #  define count_bits_i(i) (std::bitset<8>{i}.count())
@@ -26,13 +21,7 @@ namespace lexit {
 
 static int builtin_ctzll(uint64_t a)
 {
-#ifdef _MSC_VER
-  unsigned long ctz;
-  _BitScanForward64(&ctz, a);
-  return ctz;
-#else
   return __builtin_ctzll(a);
-#endif
 }  // namespace lexit
 
 static uint32_t divide_ceil(uint32_t a, uint32_t b)

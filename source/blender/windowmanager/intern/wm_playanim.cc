@@ -19,13 +19,9 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
-#ifndef WIN32
-#  include <sys/times.h>
-#  include <sys/wait.h>
-#  include <unistd.h>
-#else
-#  include <io.h>
-#endif
+#include <sys/times.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include "MEM_guardedalloc.h"
 
 #include "CLG_log.h"

@@ -6,12 +6,6 @@
  * \ingroup imbuf
  */
 
-#ifdef _MSC_VER
-/* This needs to be included first to prevent ffmpegs headers adding defines for various math
- * constants leading to duplicate definitions. */
-#  include <cmath>
-#endif
-
 #include "movie_util.hh"
 #include "movie_write.hh"
 

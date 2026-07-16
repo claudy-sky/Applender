@@ -63,16 +63,9 @@ class GPUVertexBuffer {
         assert(0);
         break;
     }
-    const bool use_update_sub = GPU_backend_get_type() != GPU_BACKEND_VULKAN;
-    gpu::VertBuf *vertex_buffer = nullptr;
-    if (use_update_sub) {
-      vertex_buffer = GPU_vertbuf_calloc();
-      GPU_vertbuf_init_build_on_device(*vertex_buffer, format, vertex_len);
-    }
-    else {
-      vertex_buffer = GPU_vertbuf_create_with_format_ex(format, GPU_USAGE_DYNAMIC);
-      GPU_vertbuf_data_alloc(*vertex_buffer, vertex_len);
-    }
+    const bool use_update_sub = true;
+    gpu::VertBuf *vertex_buffer = GPU_vertbuf_calloc();
+    GPU_vertbuf_init_build_on_device(*vertex_buffer, format, vertex_len);
     return new GPUVertexBuffer(*vertex_buffer, element_count, use_update_sub);
   }
 

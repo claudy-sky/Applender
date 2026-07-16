@@ -12,11 +12,7 @@
 
 #include <algorithm>
 #include <fcntl.h>
-#if defined(WIN32)
-#  include <io.h>
-#else
-#  include <unistd.h>
-#endif
+#include <unistd.h>
 
 #include "oiio/openimageio_support.hh"
 

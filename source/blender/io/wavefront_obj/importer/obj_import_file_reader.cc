@@ -28,11 +28,7 @@
 #include <charconv>
 
 #include <fcntl.h>
-#ifndef WIN32
-#  include <unistd.h>
-#else
-#  include <io.h>
-#endif
+#include <unistd.h>
 
 #include "CLG_log.h"
 

@@ -57,6 +57,31 @@ int BLI_system_thread_count();
 void BLI_system_num_threads_override_set(int num);
 int BLI_system_num_threads_override_get();
 
+/* Thread Quality-of-Service
+ *
+ * On macOS the QoS class tells the XNU scheduler which core cluster
+ * (performance/efficiency) a thread prefers and how it ranks against other
+ * runnable threads. On other platforms this is a no-op. */
+
+enum ThreadQoS {
+  /** UI-critical work. The Cocoa main thread runs at this class, use sparingly. */
+  BLI_THREAD_QOS_USER_INTERACTIVE,
+  /** Work the user started and is actively waiting on. */
+  BLI_THREAD_QOS_USER_INITIATED,
+  /** Long-running work behind continued interaction, yields to higher classes. */
+  BLI_THREAD_QOS_UTILITY,
+  /** Maintenance work the user never waits on, restricted to efficiency cores. */
+  BLI_THREAD_QOS_BACKGROUND,
+};
+
+/**
+ * Assign a QoS class to the calling thread (only affects the caller, threads
+ * cannot re-classify each other). May be called again to re-classify.
+ * Setting the `BLENDER_THREAD_QOS_DISABLE` environment variable turns all QoS
+ * assignment off, leaving threads at the default unspecified class.
+ */
+void BLI_thread_qos_set(ThreadQoS qos);
+
 /**
  * Global Mutex Locks
  *

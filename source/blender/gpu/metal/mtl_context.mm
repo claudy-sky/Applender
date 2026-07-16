@@ -11,6 +11,7 @@
 #include "mtl_immediate.hh"
 #include "mtl_memory.hh"
 #include "mtl_primitive.hh"
+#include "mtl_ray_tracing.hh"
 #include "mtl_shader.hh"
 #include "mtl_shader_generate.hh"
 #include "mtl_shader_interface.hh"
@@ -427,6 +428,14 @@ void MTLContext::activate()
       ssbo_bind.bound = false;
       ssbo_bind.ssbo = nullptr;
     }
+  }
+
+  /* Reset acceleration structure bind state. Acceleration structures may be
+   * freed while another context is active; their destructor can only clear
+   * bindings of the then-current context. */
+  for (auto &as_bind : this->pipeline_state.accel_struct_bindings) {
+    as_bind.bound = false;
+    as_bind.tlas = nullptr;
   }
 
   /* Ensure imm active. */
@@ -952,6 +961,45 @@ static void ensure_buffer_bindings(MTLContext &ctx,
   }
 }
 
+/* Bind acceleration structures (ray queries) to an active command encoder using the current
+ * context state. Acceleration structures occupy dynamically assigned buffer bind indices
+ * (see `mtl_acceleration_structure_buffer_index`). No-op for shaders without acceleration
+ * structure resources. */
+template<typename CommandEncoderT>
+static void ensure_acceleration_structure_bindings(MTLContext &ctx,
+                                                   MTLShader &shader,
+                                                   CommandEncoderT enc)
+{
+  MTLShaderInterface &shader_interface = shader.get_interface();
+  const uint32_t enabled_mask = shader_interface.enabled_accel_struct_mask();
+  if (enabled_mask == 0) {
+    return;
+  }
+
+  for (const uint slot : bits::iter_1_indices(enabled_mask)) {
+    const MTLAccelerationStructureBinding &bind = ctx.pipeline_state.accel_struct_bindings[slot];
+    const int buffer_index = shader_interface.accel_struct_buffer_index_get(slot);
+    id<MTLAccelerationStructure> accel_struct = (bind.tlas != nullptr) ?
+                                                    bind.tlas->acceleration_structure() :
+                                                    nil;
+    if (accel_struct == nil || buffer_index < 0) {
+      MTL_LOG_ERROR("Shader %s: Missing acceleration structure bind: slot(%d).",
+                    shader.name_get().c_str(),
+                    slot);
+      continue;
+    }
+    enc.set_acceleration_structure(accel_struct, buffer_index);
+    /* The top level acceleration structure references its instanced bottom level ones
+     * indirectly. They need to be made resident explicitly. */
+    for (id<MTLAccelerationStructure> blas_handle : bind.tlas->instanced_acceleration_structures())
+    {
+      if (blas_handle != nil) {
+        enc.use_resource(blas_handle, MTLResourceUsageRead);
+      }
+    }
+  }
+}
+
 void MTLContext::pipeline_state_init()
 {
   /** Default States. **/
@@ -1204,6 +1252,8 @@ bool MTLContext::ensure_render_pipeline_state(MTLPrimitiveType mtl_prim_type)
                           psi->used_tex_frag_mask);
   ensure_buffer_bindings(*this, *shader, vert_rec, rps.vertex_bindings, psi->used_buf_vert_mask);
   ensure_buffer_bindings(*this, *shader, frag_rec, rps.fragment_bindings, psi->used_buf_frag_mask);
+  ensure_acceleration_structure_bindings(*this, *shader, vert_rec);
+  ensure_acceleration_structure_bindings(*this, *shader, frag_rec);
   if (pc_buf && pc_buf->is_dirty()) {
     ensure_push_constant(*this, *shader, vert_rec, rps.vertex_bindings, psi->used_buf_vert_mask);
     ensure_push_constant(*this, *shader, frag_rec, rps.fragment_bindings, psi->used_buf_frag_mask);
@@ -1538,6 +1588,7 @@ void MTLContext::compute_dispatch(int groups_x_len, int groups_y_len, int groups
   MTLComputeCommandEncoder comp_rec{compute_encoder};
   ensure_texture_bindings(*this, *shader, comp_rec, cs.compute_bindings, pipe_state_inst->compute);
   ensure_buffer_bindings(*this, *shader, comp_rec, cs.compute_bindings);
+  ensure_acceleration_structure_bindings(*this, *shader, comp_rec);
   if (pc_buf && pc_buf->is_dirty()) {
     ensure_push_constant(*this, *shader, comp_rec, cs.compute_bindings);
     pc_buf->tag_updated();
@@ -1607,6 +1658,7 @@ void MTLContext::compute_dispatch_indirect(StorageBuf *indirect_buf)
   MTLComputeCommandEncoder comp_rec{compute_encoder};
   ensure_texture_bindings(*this, *shader, comp_rec, cs.compute_bindings, pipe_state_inst->compute);
   ensure_buffer_bindings(*this, *shader, comp_rec, cs.compute_bindings);
+  ensure_acceleration_structure_bindings(*this, *shader, comp_rec);
   if (pc_buf && pc_buf->is_dirty()) {
     ensure_push_constant(*this, *shader, comp_rec, cs.compute_bindings);
     pc_buf->tag_updated();
