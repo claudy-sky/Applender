@@ -79,6 +79,12 @@ using namespace metal::raytracing;
 #define ccl_gpu_ballot(predicate) ((uint64_t)((simd_vote::vote_t)simd_ballot(predicate)))
 #define ccl_gpu_syncthreads() threadgroup_barrier(mem_flags::mem_threadgroup);
 
+/* simdgroup reduction/scan primitives (metal_simdgroup, available since MSL 2.1; the minimum
+ * language version used by this fork is MSL 2.4). Every lane of the executing (converged)
+ * simdgroup must call these -- same requirement as ccl_gpu_ballot() above. */
+#define ccl_gpu_simd_sum(x) simd_sum(x)
+#define ccl_gpu_simd_prefix_exclusive_sum(x) simd_prefix_exclusive_sum(x)
+
 // clang-format off
 
 /* kernel.h adapters */

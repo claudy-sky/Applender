@@ -57,6 +57,10 @@ MTLFrameBuffer::MTLFrameBuffer(MTLContext *ctx, const char *name) : FrameBuffer(
 
 MTLFrameBuffer::~MTLFrameBuffer()
 {
+  /* The attachment textures may outlive this framebuffer: realize any
+   * deferred clear so their contents match pre-deferral behavior. */
+  this->apply_pending_clear_for_external_access();
+
   /* If FrameBuffer is associated with a currently open RenderPass, end. */
   if (context_->main_command_buffer.get_active_framebuffer() == this) {
     context_->main_command_buffer.end_active_command_encoder();
@@ -130,8 +134,23 @@ void MTLFrameBuffer::bind(bool enabled_srgb)
     Shader::set_framebuffer_srgb_target(enabled_srgb && srgb_);
   }
 
-  /* Reset clear state on bind -- Clears and load/store ops are set after binding. */
-  this->reset_clear_state();
+  /* Reset clear state on bind -- Clears and load/store ops are set after binding.
+   * EXCEPT if a clear from an earlier bind of *this* framebuffer is still pending
+   * (`has_pending_clear_`) and has not yet been physically realized: with clear deferral (see
+   * clear()/clear_multi()/clear_attachment() above), that can now be the case even after this
+   * framebuffer was unbound and rebound (`GPU_framebuffer_bind()` calls `bind()`
+   * unconditionally, every time, regardless of whether it is already active). Wiping the
+   * per-attachment GPU_LOADACTION_CLEAR markers here would silently drop the pending clear:
+   * `has_pending_clear_` would remain true (this function does not touch it), so the next real
+   * render pass would still pick MTL_FB_CONFIG_CLEAR and call mark_cleared() -- but with
+   * load_action already reset to LOAD by the call below, that pass would *load* undefined
+   * texture contents instead of clearing, and the clear request would be lost with no further
+   * indication. Before clear deferral this could not happen: force_clear() always realized the
+   * clear synchronously inside the originating clear() call, so `has_pending_clear_` was always
+   * already false by the time any subsequent bind() could run. */
+  if (!has_pending_clear_) {
+    this->reset_clear_state();
+  }
 
   /* Bind to active context. */
   MTLContext *mtl_context = MTLContext::get();
@@ -292,6 +311,16 @@ bool MTLFrameBuffer::check(char err_out[256])
   return valid;
 }
 
+/* Kill-switch: forces every clear() / clear_multi() / clear_attachment() call to eagerly realize
+ * its clear via force_clear(), exactly matching pre-optimization behavior (see force_clear()
+ * call sites below). Checked once and cached, matching the `METAL_FORCE_INTEL` /
+ * `BLENDER_METAL_RAYTRACING` pattern in mtl_backend.mm. */
+static bool metal_force_clear_enabled()
+{
+  static const bool force_clear = (getenv("BLENDER_METAL_FORCE_CLEAR") != nullptr);
+  return force_clear;
+}
+
 void MTLFrameBuffer::force_clear()
 {
   /* Perform clear by ending current and starting a new render pass. */
@@ -306,6 +335,35 @@ void MTLFrameBuffer::force_clear()
     mtl_context->ensure_begin_render_pass();
     BLI_assert(has_pending_clear_ == false);
   }
+}
+
+void MTLFrameBuffer::apply_pending_clear_for_external_access()
+{
+  if (!has_pending_clear_) {
+    return;
+  }
+  MTLContext *mtl_context = MTLContext::get();
+  if (mtl_context == nullptr || mtl_context != context_) {
+    /* Cannot realize the clear on a foreign or absent context. */
+    return;
+  }
+
+  /* Temporarily make this framebuffer the active one so the deferred clear is
+   * realized through a clear-only render pass. The backend-level bind only
+   * records `active_fb`; no pass begins until `ensure_begin_render_pass()`. */
+  FrameBuffer *prev_fb = mtl_context->active_fb;
+  mtl_context->framebuffer_bind(this);
+  this->force_clear();
+  /* End the clear-only pass so tile contents are stored to the attachments
+   * before they are consumed, and so the restored binding does not inherit
+   * this encoder. */
+  if (mtl_context->main_command_buffer.is_inside_render_pass()) {
+    mtl_context->main_command_buffer.end_active_command_encoder();
+  }
+  if (prev_fb && prev_fb != this) {
+    mtl_context->framebuffer_bind(static_cast<MTLFrameBuffer *>(prev_fb));
+  }
+  BLI_assert(has_pending_clear_ == false);
 }
 
 void MTLFrameBuffer::clear(GPUFrameBufferBits buffers,
@@ -349,12 +407,25 @@ void MTLFrameBuffer::clear(GPUFrameBufferBits buffers,
     /* Apply state before clear. */
     this->apply_state();
 
-    /* TODO(Metal): Optimize - Currently force-clear always used. Consider moving clear state to
-     * MTLTexture instead. */
-    /* Force clear if RP is not yet active -- not the most efficient, but there is no distinction
-     * between clears where no draws occur. Can optimize at the high-level by using explicit
-     * load-store flags. */
-    this->force_clear();
+    /* TBDR clear deferral: only force-realize the clear right now if a render pass is already
+     * active (mid-pass clear) -- keep today's exact semantics there: end the active encoder and
+     * begin a fresh one so the clear is recorded before whatever comes next in program order.
+     * Otherwise leave the clear pending: `has_pending_clear_` plus each attachment's
+     * GPU_LOADACTION_CLEAR (set above) are per-framebuffer state that survive any number of
+     * other framebuffers being bound/rendered to in between, and get consumed as
+     * loadAction=Clear (MTL_FB_CONFIG_CLEAR, see bake_render_pass_descriptor()) the next time
+     * *this* framebuffer's render pass actually begins
+     * (MTLContext::ensure_begin_render_pass() -> ensure_begin_render_command_encoder()), which
+     * also resets `has_pending_clear_` via mark_cleared() at that point. This avoids an entirely
+     * redundant tile load/store round-trip for a render pass that would otherwise exist only to
+     * perform the clear -- on Apple's TBDR GPUs, loadAction=Clear operates on tile memory and is
+     * effectively free, so folding the clear into the next real pass's load action is strictly
+     * better than forcing a pass now. See design_notes for the traced state machine.
+     * Kill-switch: BLENDER_METAL_FORCE_CLEAR reverts to always calling force_clear(). */
+    MTLContext *mtl_context = context_;
+    if (metal_force_clear_enabled() || mtl_context->main_command_buffer.is_inside_render_pass()) {
+      this->force_clear();
+    }
   }
 }
 
@@ -379,12 +450,25 @@ void MTLFrameBuffer::clear_multi(Span<double4> clear_cols)
     /* Apply state before clear. */
     this->apply_state();
 
-    /* TODO(Metal): Optimize - Currently force-clear always used. Consider moving clear state to
-     * MTLTexture instead. */
-    /* Force clear if RP is not yet active -- not the most efficient, but there is no distinction
-     * between clears where no draws occur. Can optimize at the high-level by using explicit
-     * load-store flags. */
-    this->force_clear();
+    /* TBDR clear deferral: only force-realize the clear right now if a render pass is already
+     * active (mid-pass clear) -- keep today's exact semantics there: end the active encoder and
+     * begin a fresh one so the clear is recorded before whatever comes next in program order.
+     * Otherwise leave the clear pending: `has_pending_clear_` plus each attachment's
+     * GPU_LOADACTION_CLEAR (set above) are per-framebuffer state that survive any number of
+     * other framebuffers being bound/rendered to in between, and get consumed as
+     * loadAction=Clear (MTL_FB_CONFIG_CLEAR, see bake_render_pass_descriptor()) the next time
+     * *this* framebuffer's render pass actually begins
+     * (MTLContext::ensure_begin_render_pass() -> ensure_begin_render_command_encoder()), which
+     * also resets `has_pending_clear_` via mark_cleared() at that point. This avoids an entirely
+     * redundant tile load/store round-trip for a render pass that would otherwise exist only to
+     * perform the clear -- on Apple's TBDR GPUs, loadAction=Clear operates on tile memory and is
+     * effectively free, so folding the clear into the next real pass's load action is strictly
+     * better than forcing a pass now. See design_notes for the traced state machine.
+     * Kill-switch: BLENDER_METAL_FORCE_CLEAR reverts to always calling force_clear(). */
+    MTLContext *mtl_context = context_;
+    if (metal_force_clear_enabled() || mtl_context->main_command_buffer.is_inside_render_pass()) {
+      this->force_clear();
+    }
   }
 }
 
@@ -420,12 +504,25 @@ void MTLFrameBuffer::clear_attachment(GPUAttachmentType type, const double4 clea
     /* Apply state before clear. */
     this->apply_state();
 
-    /* TODO(Metal): Optimize - Currently force-clear always used. Consider moving clear state to
-     * MTLTexture instead. */
-    /* Force clear if RP is not yet active -- not the most efficient, but there is no distinction
-     * between clears where no draws occur. Can optimize at the high-level by using explicit
-     * load-store flags. */
-    this->force_clear();
+    /* TBDR clear deferral: only force-realize the clear right now if a render pass is already
+     * active (mid-pass clear) -- keep today's exact semantics there: end the active encoder and
+     * begin a fresh one so the clear is recorded before whatever comes next in program order.
+     * Otherwise leave the clear pending: `has_pending_clear_` plus each attachment's
+     * GPU_LOADACTION_CLEAR (set above) are per-framebuffer state that survive any number of
+     * other framebuffers being bound/rendered to in between, and get consumed as
+     * loadAction=Clear (MTL_FB_CONFIG_CLEAR, see bake_render_pass_descriptor()) the next time
+     * *this* framebuffer's render pass actually begins
+     * (MTLContext::ensure_begin_render_pass() -> ensure_begin_render_command_encoder()), which
+     * also resets `has_pending_clear_` via mark_cleared() at that point. This avoids an entirely
+     * redundant tile load/store round-trip for a render pass that would otherwise exist only to
+     * perform the clear -- on Apple's TBDR GPUs, loadAction=Clear operates on tile memory and is
+     * effectively free, so folding the clear into the next real pass's load action is strictly
+     * better than forcing a pass now. See design_notes for the traced state machine.
+     * Kill-switch: BLENDER_METAL_FORCE_CLEAR reverts to always calling force_clear(). */
+    MTLContext *mtl_context = context_;
+    if (metal_force_clear_enabled() || mtl_context->main_command_buffer.is_inside_render_pass()) {
+      this->force_clear();
+    }
   }
 }
 void MTLFrameBuffer::subpass_transition_impl(const GPUAttachmentState /*depth_attachment_state*/,
@@ -461,6 +558,9 @@ void MTLFrameBuffer::read(GPUFrameBufferBits planes,
                           int slot,
                           void *r_data)
 {
+  /* Read-back consumes the attachment textures directly: a deferred clear
+   * must be realized first or stale pre-clear contents would be read. */
+  this->apply_pending_clear_for_external_access();
 
   BLI_assert((planes & GPU_STENCIL_BIT) == 0);
   BLI_assert(area[2] > 0);
@@ -1807,6 +1907,10 @@ void MTLFrameBuffer::blit(uint read_slot,
   if (!metal_fb_write) {
     return;
   }
+  /* The blit reads this framebuffer's attachment textures directly: realize
+   * any deferred clear first (see apply_pending_clear_for_external_access). */
+  this->apply_pending_clear_for_external_access();
+
   MTLContext *mtl_context = MTLContext::get();
 
   const bool do_color = (blit_buffers & GPU_COLOR_BIT);

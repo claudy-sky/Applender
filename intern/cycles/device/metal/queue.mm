@@ -558,12 +558,29 @@ bool MetalDeviceQueue::enqueue(DeviceKernel kernel,
       case DEVICE_KERNEL_INTEGRATOR_QUEUED_SHADOW_PATHS_ARRAY:
       case DEVICE_KERNEL_INTEGRATOR_ACTIVE_PATHS_ARRAY:
       case DEVICE_KERNEL_INTEGRATOR_TERMINATED_PATHS_ARRAY:
-      case DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY:
       case DEVICE_KERNEL_INTEGRATOR_COMPACT_PATHS_ARRAY:
       case DEVICE_KERNEL_INTEGRATOR_TERMINATED_SHADOW_PATHS_ARRAY:
-      case DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_PATHS_ARRAY:
-        /* See parallel_active_index.h for why this amount of shared memory is needed.
-         * Rounded up to 16 bytes for Metal */
+      case DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_PATHS_ARRAY: {
+        /* These kernels all instantiate gpu_parallel_active_index_array_impl(), whose actual
+         * shared memory requirement is `sizeof(int) * (num_warps + 1)`, not
+         * `sizeof(int) * (num_threads_per_block + 1)` -- see parallel_active_index.h. Derive
+         * num_warps from the pipeline's threadExecutionWidth (queried rather than hardcoded,
+         * though it is always 32 on Apple GPUs) so this matches exactly what the kernel itself
+         * computes at dispatch time (num_warps = blocksize / ccl_gpu_warp_size, where blocksize
+         * is this same num_threads_per_block). Rounded up to 16 bytes for Metal. */
+        const int simd_width = (int)active_pipeline.pipeline.threadExecutionWidth;
+        assert(simd_width > 0 && num_threads_per_block % simd_width == 0);
+        const int num_warps = num_threads_per_block / simd_width;
+        shared_mem_bytes = (int)round_up((num_warps + 1) * sizeof(int), 16);
+        break;
+      }
+
+      case DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY:
+        /* Unlike the active-index kernels above, this instantiates
+         * gpu_parallel_sorted_index_array() (parallel_sorted_index.h) -- a different algorithm
+         * that does not use the threadgroup array at all. Left at the pre-existing
+         * (conservative) size rather than reasoned down, since proving it needs 0 bytes is out
+         * of scope for this change. */
         shared_mem_bytes = (int)round_up((num_threads_per_block + 1) * sizeof(int), 16);
         break;
 

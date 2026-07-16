@@ -21,7 +21,99 @@
 
 #include "OCIO_colorspace.hh"
 
+#if defined(__ARM_NEON)
+#  include <arm_neon.h>
+#endif
+
+/* Bit-exact NEON<->scalar parity in this file depends on multiply+add pairs
+ * NOT contracting into FMA on either side: the scalar reference
+ * (255.0f * val) + 0.5f rounds twice, and the NEON path deliberately uses
+ * separate vmulq/vaddq. The build sets -ffp-contract=off globally; pin it
+ * per-TU so the parity cannot silently break if that flag ever changes. */
+#if defined(__clang__)
+#  pragma clang fp contract(off)
+#endif
+
 namespace blender {
+
+#if defined(__ARM_NEON)
+/* -------------------------------------------------------------------- */
+/** \name NEON byte <-> float pixel conversion (Apple Silicon / Metal-only build)
+ *
+ * These are bit-exact replacements for the scalar per-pixel loops used by
+ * #IMB_buffer_float_from_byte and the no-dither/no-predivide branch of
+ * #IMB_buffer_byte_from_float. Reference semantics (verified in
+ * math_color_inline.cc / math_base_inline.cc):
+ *
+ *   rgba_uchar_to_float(): r_col[i] = float(col_ub[i]) * (1.0f / 255.0f)
+ *
+ *   rgba_float_to_uchar() -> unit_float_to_uchar_clamp_v4() -> per component:
+ *     unit_float_to_uchar_clamp(val) =
+ *       (val <= 0.0f)                    ? 0   :
+ *       (val > (1.0f - 0.5f / 255.0f))   ? 255 :
+ *                                          uchar(255.0f * val + 0.5f)  // truncating cast
+ *
+ *   NaN is UB in the scalar reference (both comparisons are false, so the final
+ *   `static_cast<unsigned char>(NaN)` is executed, which is undefined behavior).
+ *   The NEON helpers below are therefore only required to match on non-NaN input,
+ *   and callers/tests must not probe NaN.
+ * \{ */
+
+/* Convert 4 interleaved RGBA8 pixels (16 bytes) at `from` to 4 interleaved RGBA float
+ * pixels (16 floats) at `to`. Bit-exact with 4x `rgba_uchar_to_float()`. */
+static inline void rgba_uchar_to_float_neon4(float *to, const uchar *from)
+{
+  const uint8x16_t bytes = vld1q_u8(from);
+  const uint16x8_t lo16 = vmovl_u8(vget_low_u8(bytes));
+  const uint16x8_t hi16 = vmovl_u8(vget_high_u8(bytes));
+  const uint32x4_t v0 = vmovl_u16(vget_low_u16(lo16));
+  const uint32x4_t v1 = vmovl_u16(vget_high_u16(lo16));
+  const uint32x4_t v2 = vmovl_u16(vget_low_u16(hi16));
+  const uint32x4_t v3 = vmovl_u16(vget_high_u16(hi16));
+  /* Single multiply per lane by the same rounded (1.0f/255.0f) constant the scalar
+   * path uses -- matches `float(c) * (1.0f / 255.0f)` bit-for-bit (multiplication is
+   * commutative and exactly reproducible in IEEE-754, so operand order does not matter). */
+  const float32x4_t scale = vdupq_n_f32(1.0f / 255.0f);
+  vst1q_f32(to + 0, vmulq_f32(vcvtq_f32_u32(v0), scale));
+  vst1q_f32(to + 4, vmulq_f32(vcvtq_f32_u32(v1), scale));
+  vst1q_f32(to + 8, vmulq_f32(vcvtq_f32_u32(v2), scale));
+  vst1q_f32(to + 12, vmulq_f32(vcvtq_f32_u32(v3), scale));
+}
+
+/* Clamp/convert one float32x4 lane group to bytes, reproducing
+ * `unit_float_to_uchar_clamp()` exactly:
+ *  - `vmulq_f32` + `vaddq_f32` (NOT a fused multiply-add) to match the two separately
+ *    rounded scalar operations `(255.0f * val) + 0.5f`.
+ *  - `vcvtq_u32_f32` truncates toward zero (FCVTZU), matching the scalar's truncating
+ *    `static_cast<unsigned char>` on an always-non-negative value.
+ *  - Lanes that are out-of-range for the "else" branch (val <= 0, or val absurdly large)
+ *    may compute garbage in `trunc`, but they are always overridden by the `is_le0` /
+ *    `is_gt_thresh` select below, so the garbage is never observed. */
+static inline uint32x4_t clamp_float_to_byte_u32(float32x4_t v)
+{
+  const uint32x4_t is_le0 = vcleq_f32(v, vdupq_n_f32(0.0f));
+  const uint32x4_t is_gt_thresh = vcgtq_f32(v, vdupq_n_f32(1.0f - 0.5f / 255.0f));
+  const float32x4_t scaled = vaddq_f32(vmulq_f32(v, vdupq_n_f32(255.0f)), vdupq_n_f32(0.5f));
+  const uint32x4_t trunc = vcvtq_u32_f32(scaled);
+  const uint32x4_t clamped_lo = vbslq_u32(is_le0, vdupq_n_u32(0), trunc);
+  return vbslq_u32(is_gt_thresh, vdupq_n_u32(255), clamped_lo);
+}
+
+/* Convert 4 interleaved RGBA float pixels (16 floats) at `from` to 4 interleaved
+ * RGBA8 pixels (16 bytes) at `to`. Bit-exact with 4x `rgba_float_to_uchar()`. */
+static inline void rgba_float_to_uchar_neon4(uchar *to, const float *from)
+{
+  const uint32x4_t v0 = clamp_float_to_byte_u32(vld1q_f32(from + 0));
+  const uint32x4_t v1 = clamp_float_to_byte_u32(vld1q_f32(from + 4));
+  const uint32x4_t v2 = clamp_float_to_byte_u32(vld1q_f32(from + 8));
+  const uint32x4_t v3 = clamp_float_to_byte_u32(vld1q_f32(from + 12));
+  const uint8x8_t b0 = vmovn_u16(vcombine_u16(vmovn_u32(v0), vmovn_u32(v1)));
+  const uint8x8_t b1 = vmovn_u16(vcombine_u16(vmovn_u32(v2), vmovn_u32(v3)));
+  vst1q_u8(to, vcombine_u8(b0, b1));
+}
+
+/** \} */
+#endif  /* __ARM_NEON */
 
 /* -------------------------------------------------------------------- */
 
@@ -94,7 +186,13 @@ void IMB_buffer_byte_from_float(uchar *dest,
         }
       }
       else {
-        for (int x = 0; x < width; x++, from += 4, to += 4) {
+        int x = 0;
+#if defined(__ARM_NEON)
+        for (; x + 4 <= width; x += 4, from += 16, to += 16) {
+          rgba_float_to_uchar_neon4(to, from);
+        }
+#endif
+        for (; x < width; x++, from += 4, to += 4) {
           rgba_float_to_uchar(to, from);
         }
       }
@@ -157,7 +255,13 @@ void IMB_buffer_float_from_byte(
     const uchar *from = src + size_t(src_stride) * y * 4;
     float *to = dest + size_t(dest_stride) * y * 4;
 
-    for (int x = 0; x < width; x++, from += 4, to += 4) {
+    int x = 0;
+#if defined(__ARM_NEON)
+    for (; x + 4 <= width; x += 4, from += 16, to += 16) {
+      rgba_uchar_to_float_neon4(to, from);
+    }
+#endif
+    for (; x < width; x++, from += 4, to += 4) {
       rgba_uchar_to_float(to, from);
     }
   }

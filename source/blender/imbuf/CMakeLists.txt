@@ -135,6 +135,7 @@ add_library(bf::imbuf ALIAS bf_imbuf)
 if(WITH_GTESTS)
   set(TEST_SRC
     tests/IMB_partial_update_test.cc
+    tests/IMB_pixel_conversion_neon_test.cc
     tests/IMB_scaling_test.cc
     tests/IMB_transform_test.cc
   )

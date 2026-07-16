@@ -69,6 +69,40 @@ struct MTLBoundShaderState {
   }
 };
 
+/* Cache entry for the conservative per-slot dirty-binding optimization (round 3).
+ * An entry is only considered a "hit" (binding already resident in the current encoder's
+ * argument table, no rebind necessary) when `generation` matches the live
+ * MTLCommandBufferManager::encoder_generation() *and* `resource`/`key` match exactly.
+ * Metal only guarantees argument-table bindings persist for the lifetime of the *current*
+ * command encoder, so any encoder transition (render/compute/blit/acceleration-structure)
+ * must invalidate every entry -- the monotonic, never-reset generation counter guarantees this
+ * even if a particular reset_state() call is ever missed on some path.
+ * `resource` must always be the *actual* Metal handle passed to the bind call (e.g.
+ * id<MTLBuffer>/id<MTLTexture>), never the higher-level gpu::MTLUniformBuf/MTLTexture wrapper
+ * pointer -- a buffer/texture reallocation behind an unchanged wrapper must read as a miss.
+ * Kill-switch: BLENDER_METAL_NO_BINDING_CACHE (see mtl_context.mm) bypasses this cache entirely
+ * so every slot is treated as dirty, matching pre-optimization behavior exactly. */
+struct MTLResourceBindingCacheEntry {
+  const void *resource = nullptr;
+  /* Disambiguating key -- currently the buffer bind offset (always 0 for UBO/SSBO binds today,
+   * kept for correctness should a non-zero offset ever be introduced); unused (0) for images. */
+  uint64_t key = 0;
+  /* 0 == "never bound"; encoder_generation() counts from 1, so 0 can never match live state. */
+  uint64_t generation = 0;
+};
+
+/* Per-pipeline-stage conservative dirty-binding caches consumed by `ensure_texture_bindings` /
+ * `ensure_buffer_bindings` in mtl_context.mm. Vertex, fragment and compute stages each have an
+ * independent Metal argument table, so each stage owns its own instance -- caches must never be
+ * shared across stages or across encoder types (see MTLRenderPassState/MTLComputeState below).
+ * Sampler-state bindings (argument-buffer path) are explicitly out of scope this round and stay
+ * unconditionally dirty. */
+struct MTLBindingDirtyCache {
+  std::array<MTLResourceBindingCacheEntry, MTL_MAX_IMAGE_SLOTS> image_cache = {};
+  std::array<MTLResourceBindingCacheEntry, MTL_MAX_UBO> ubo_cache = {};
+  std::array<MTLResourceBindingCacheEntry, MTL_MAX_SSBO> ssbo_cache = {};
+};
+
 /* Metal Context Render Pass State -- Used to track active RenderCommandEncoder state based on
  * bound MTLFrameBuffer's.Owned by MTLContext. */
 class MTLRenderPassState {
@@ -91,6 +125,10 @@ class MTLRenderPassState {
 
   MTLBindingCache<gpu::MTLVertexCommandEncoder> vertex_bindings;
   MTLBindingCache<gpu::MTLFragmentCommandEncoder> fragment_bindings;
+
+  /* Conservative dirty-binding caches (image/UBO/SSBO) -- see MTLBindingDirtyCache. */
+  MTLBindingDirtyCache vertex_dirty_cache;
+  MTLBindingDirtyCache fragment_dirty_cache;
 
   /* Reset RenderCommandEncoder binding state. */
   void reset_state();
@@ -130,6 +168,9 @@ class MTLComputeState {
   id<MTLComputePipelineState> bound_pso = nil;
 
   MTLBindingCache<gpu::MTLComputeCommandEncoder> compute_bindings;
+
+  /* Conservative dirty-binding cache (image/UBO/SSBO) -- see MTLBindingDirtyCache. */
+  MTLBindingDirtyCache compute_dirty_cache;
 
   /* Reset ComputeCommandEncoder binding state. */
   void reset_state();
@@ -505,6 +546,13 @@ class MTLCommandBufferManager {
   int vertex_submitted_count_ = 0;
   bool empty_ = true;
 
+  /* Monotonic counter incremented every time ANY new command encoder (render, compute, blit,
+   * acceleration-structure) begins -- see `register_encoder_counters()`. Unlike `encoder_count_`
+   * above, this is never reset (in particular it does NOT reset on command-buffer submission),
+   * so equality is a valid cache-validity check for the lifetime of the context. Used by the
+   * conservative binding-dirty caches (MTLBindingDirtyCache) in mtl_context.mm. */
+  uint64_t encoder_generation_ = 0;
+
   /** Debug groups. */
   /* Copy of the debug stack to keep track of which group have been pushed to the debug layers.
    * This is needed because we do JIT push and pop the debug groups to better accommodate the
@@ -548,6 +596,12 @@ class MTLCommandBufferManager {
   void register_draw_counters(int vertex_submission);
   void reset_counters();
   bool do_break_submission();
+
+  /* Monotonic encoder-generation counter -- see `encoder_generation_` above. */
+  uint64_t encoder_generation() const
+  {
+    return encoder_generation_;
+  }
 
   /* Encoder and Pass management. */
   /* End currently active MTLCommandEncoder. */

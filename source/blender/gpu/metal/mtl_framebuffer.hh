@@ -252,6 +252,13 @@ class MTLFrameBuffer : public FrameBuffer {
   /* Clears a render target by force-opening a render pass. */
   void force_clear();
 
+  /* Realize a deferred clear before the attachment textures are consumed by
+   * anything other than this framebuffer's own render pass (read-back, blit
+   * source, destruction). Deferred clears only fold into the loadAction of
+   * this framebuffer's next render pass; direct texture access would
+   * otherwise observe stale pre-clear contents. */
+  void apply_pending_clear_for_external_access();
+
   MEM_CXX_CLASS_ALLOC_FUNCS("MTLFrameBuffer");
 };
 

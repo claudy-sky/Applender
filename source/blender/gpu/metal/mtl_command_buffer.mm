@@ -37,6 +37,8 @@ void MTLCommandBufferManager::prepare(bool /*supports_render*/)
 void MTLCommandBufferManager::register_encoder_counters()
 {
   encoder_count_++;
+  /* Never reset (unlike `encoder_count_`) -- see declaration for why this must be monotonic. */
+  encoder_generation_++;
   empty_ = false;
 }
 
@@ -783,6 +785,12 @@ void MTLRenderPassState::reset_state()
 
   this->vertex_bindings = {};
   this->fragment_bindings = {};
+
+  /* Reset conservative dirty-binding caches -- redundant with the encoder-generation check
+   * (belt-and-suspenders) but mirrors the low-level binding cache reset above exactly, and
+   * covers the MTLContext::activate() re-entry point which also calls this method. */
+  this->vertex_dirty_cache = {};
+  this->fragment_dirty_cache = {};
 }
 
 void MTLComputeState::reset_state()
@@ -791,6 +799,7 @@ void MTLComputeState::reset_state()
   this->bound_pso = nil;
 
   this->compute_bindings = {};
+  this->compute_dirty_cache = {};
 }
 
 void MTLComputeState::bind_pso(id<MTLComputePipelineState> pso)

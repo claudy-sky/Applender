@@ -744,6 +744,15 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
   if (lane_id == item_id.get_sub_group().get_local_range()[0] - 1) {
     atomic_fetch_and_add_uint32(num_active_pixels, num_active_pixels_in_warp);
   }
+#elif defined(__KERNEL_METAL__)
+  /* No divergent return precedes this point: `converged` starts true and is only ever
+   * reassigned (never an early-out) inside `if (x < sw && y < sh)` above, so every lane of the
+   * simdgroup reaches simd_sum() together, matching the uniformity ccl_gpu_ballot() below
+   * already relies on. */
+  const uint num_active_pixels_in_warp = uint(ccl_gpu_simd_sum(int(!converged)));
+  if (lane_id == 0) {
+    atomic_fetch_and_add_uint32(num_active_pixels, num_active_pixels_in_warp);
+  }
 #else
   /* NOTE: All threads specified in the mask must execute the intrinsic. */
   const auto num_active_pixels_mask = ccl_gpu_ballot(!converged);
@@ -1309,6 +1318,15 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
   const uint num_possible_splits_in_warp = sycl::inclusive_scan_over_group(
       item_id.get_sub_group(), static_cast<uint>(can_split), std::plus<>());
   if (lane_id == item_id.get_sub_group().get_local_range()[0] - 1) {
+    atomic_fetch_and_add_uint32(num_possible_splits, num_possible_splits_in_warp);
+  }
+#elif defined(__KERNEL_METAL__)
+  /* No divergent return precedes this point: `can_split` starts false and is only ever
+   * reassigned (never an early-out) inside `if (state < num_states)` above, so every lane of
+   * the simdgroup reaches simd_sum() together, matching the uniformity ccl_gpu_ballot() below
+   * already relies on. */
+  const uint num_possible_splits_in_warp = uint(ccl_gpu_simd_sum(int(can_split)));
+  if (lane_id == 0) {
     atomic_fetch_and_add_uint32(num_possible_splits, num_possible_splits_in_warp);
   }
 #else
