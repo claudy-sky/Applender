@@ -34,22 +34,11 @@ const char *bvh_layout_name(BVHLayout layout)
       return "EMBREE";
     case BVH_LAYOUT_METAL:
       return "METAL";
-    case BVH_LAYOUT_EMBREEGPU:
-      return "EMBREEGPU";
-    case BVH_LAYOUT_MULTI_OPTIX:
     case BVH_LAYOUT_MULTI_METAL:
-    case BVH_LAYOUT_MULTI_HIPRT:
-    case BVH_LAYOUT_MULTI_EMBREEGPU:
-    case BVH_LAYOUT_MULTI_OPTIX_EMBREE:
     case BVH_LAYOUT_MULTI_METAL_EMBREE:
-    case BVH_LAYOUT_MULTI_HIPRT_EMBREE:
-    case BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE:
       return "MULTI";
     case BVH_LAYOUT_ALL:
       return "ALL";
-    case BVH_LAYOUT_OPTIX:
-    case BVH_LAYOUT_HIPRT:
-      break;
   }
   LOG_DFATAL << "Unsupported BVH layout was passed.";
   return "";
@@ -96,7 +85,6 @@ unique_ptr<BVH> BVH::create(const BVHParams &params,
     case BVH_LAYOUT_BVH2:
       return make_unique<BVH2>(params, geometry, objects);
     case BVH_LAYOUT_EMBREE:
-    case BVH_LAYOUT_EMBREEGPU:
 #ifdef WITH_EMBREE
       return make_unique<BVHEmbree>(params, geometry, objects);
 #else
@@ -109,18 +97,8 @@ unique_ptr<BVH> BVH::create(const BVHParams &params,
       (void)device;
       break;
 #endif
-    case BVH_LAYOUT_OPTIX:
-    case BVH_LAYOUT_HIPRT:
-      (void)device;
-      break;
-    case BVH_LAYOUT_MULTI_OPTIX:
     case BVH_LAYOUT_MULTI_METAL:
-    case BVH_LAYOUT_MULTI_HIPRT:
-    case BVH_LAYOUT_MULTI_EMBREEGPU:
-    case BVH_LAYOUT_MULTI_OPTIX_EMBREE:
     case BVH_LAYOUT_MULTI_METAL_EMBREE:
-    case BVH_LAYOUT_MULTI_HIPRT_EMBREE:
-    case BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE:
       return make_unique<BVHMulti>(params, geometry, objects);
     case BVH_LAYOUT_NONE:
     case BVH_LAYOUT_ALL:

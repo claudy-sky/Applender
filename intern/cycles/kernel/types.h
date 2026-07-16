@@ -8,8 +8,7 @@
 #  include "kernel/device/cpu/compat.h"
 #endif
 
-#if (!defined(__KERNEL_GPU__) || (defined(__KERNEL_ONEAPI__) && defined(WITH_EMBREE_GPU))) && \
-    defined(WITH_EMBREE)
+#if !defined(__KERNEL_GPU__) && defined(WITH_EMBREE)
 #  include <embree4/rtcore.h>
 #  include <embree4/rtcore_scene.h>
 #  define __EMBREE__
@@ -1301,25 +1300,16 @@ enum KernelBVHLayout {
 
   BVH_LAYOUT_BVH2 = (1 << 0),
   BVH_LAYOUT_EMBREE = (1 << 1),
-  BVH_LAYOUT_OPTIX = (1 << 2),
-  BVH_LAYOUT_MULTI_OPTIX = (1 << 3),
-  BVH_LAYOUT_MULTI_OPTIX_EMBREE = (1 << 4),
+  /* Bits (1 << 2)..(1 << 4) and (1 << 8)..(1 << 13) belonged to the removed
+   * OptiX / HIP-RT / Embree-GPU layouts. The gap is intentional: surviving
+   * values keep their numbers for stability. */
   BVH_LAYOUT_METAL = (1 << 5),
   BVH_LAYOUT_MULTI_METAL = (1 << 6),
   BVH_LAYOUT_MULTI_METAL_EMBREE = (1 << 7),
-  BVH_LAYOUT_HIPRT = (1 << 8),
-  BVH_LAYOUT_MULTI_HIPRT = (1 << 9),
-  BVH_LAYOUT_MULTI_HIPRT_EMBREE = (1 << 10),
-  BVH_LAYOUT_EMBREEGPU = (1 << 11),
-  BVH_LAYOUT_MULTI_EMBREEGPU = (1 << 12),
-  BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE = (1 << 13),
 
   /* Default BVH layout to use for CPU. */
   BVH_LAYOUT_AUTO = BVH_LAYOUT_EMBREE,
-  BVH_LAYOUT_ALL = BVH_LAYOUT_BVH2 | BVH_LAYOUT_EMBREE | BVH_LAYOUT_OPTIX | BVH_LAYOUT_METAL |
-                   BVH_LAYOUT_HIPRT | BVH_LAYOUT_MULTI_HIPRT | BVH_LAYOUT_MULTI_HIPRT_EMBREE |
-                   BVH_LAYOUT_EMBREEGPU | BVH_LAYOUT_MULTI_EMBREEGPU |
-                   BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE,
+  BVH_LAYOUT_ALL = BVH_LAYOUT_BVH2 | BVH_LAYOUT_EMBREE | BVH_LAYOUT_METAL,
 };
 
 /* Specialized struct that can become constants in dynamic compilation. */
@@ -1389,12 +1379,8 @@ struct ccl_align(16) KernelData {
 #include "kernel/data_template.h"
 
   /* Device specific BVH. */
-#ifdef __KERNEL_OPTIX__
-  OptixTraversableHandle device_bvh;
-#elif defined __KERNEL_METALRT__
+#if   defined __KERNEL_METALRT__
   metalrt_as_type device_bvh;
-#elif defined(__KERNEL_HIPRT__)
-  void *device_bvh;
 #else
 #  ifdef __EMBREE__
 #    if RTC_VERSION >= 40400

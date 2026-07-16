@@ -12,12 +12,7 @@
 CCL_NAMESPACE_BEGIN
 
 #ifndef __KERNEL_NATIVE_VECTOR_TYPES__
-#  ifdef __KERNEL_ONEAPI__
-/* Define float3 as packed for oneAPI. */
-struct float3
-#  else
 struct ccl_try_align(16) float3
-#  endif
 {
 #  ifdef __KERNEL_GPU__
   /* Compact structure for GPU. */
@@ -184,9 +179,6 @@ ccl_device_inline int3 make_int3(const float3 f)
 
 #if defined(__KERNEL_METAL__)
 /* Metal has native packed_float3. */
-#elif defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__) || defined(__KERNEL_ONEAPI__)
-/* CUDA, HIP and oneAPI float3 are already packed. */
-using packed_float3 = float3;
 #else
 struct packed_float3 {
   ccl_device_inline_method packed_float3() = default;

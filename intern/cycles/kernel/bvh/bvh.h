@@ -22,35 +22,12 @@
 #  define __BVH2__
 #elif defined(__KERNEL_METALRT__)
 #  include "kernel/device/metal/bvh.h"
-#elif defined(__KERNEL_OPTIX__)
-#  include "kernel/device/optix/bvh.h"
-#elif defined(__KERNEL_HIPRT__)
-#  include "kernel/device/hiprt/bvh.h"
 #else
 #  define __BVH2__
 #endif
 
-#if defined(__KERNEL_ONEAPI__) && defined(WITH_EMBREE_GPU)
-/* bool is apparently not tested for specialization constants:
- * https://github.com/intel/llvm/blob/39d1c65272a786b2b13a6f094facfddf9408406d/sycl/test/basic_tests/SYCL-2020-spec-constants.cpp#L25-L27
- * Instead of adding one more bool specialization constant, we reuse existing embree_features one
- * and use RTC_FEATURE_FLAG_NONE as value to test for avoiding to call Embree on GPU.
- */
-/* We set it to RTC_FEATURE_FLAG_NONE by default so AoT binaries contain MNE and ray-trace kernels
- * pre-compiled without Embree.
- * Changing this default value would require updating the logic in oneapi_load_kernels(). */
-static constexpr sycl::specialization_id<RTCFeatureFlags> oneapi_embree_features{
-    RTC_FEATURE_FLAG_NONE};
-#  define IF_USING_EMBREE \
-    if (kernel_handler.get_specialization_constant<oneapi_embree_features>() != \
-        RTC_FEATURE_FLAG_NONE)
-#  define IF_NOT_USING_EMBREE \
-    if (kernel_handler.get_specialization_constant<oneapi_embree_features>() == \
-        RTC_FEATURE_FLAG_NONE)
-#else
 #  define IF_USING_EMBREE
 #  define IF_NOT_USING_EMBREE
-#endif
 
 CCL_NAMESPACE_BEGIN
 
@@ -119,7 +96,6 @@ ccl_device_intersect void scene_intersect_shadow_all(KernelGlobals kg,
                                                      ccl_private uint *num_recorded_hits,
                                                      ccl_private float3 *throughput)
 {
-#  if !defined(__KERNEL_OPTIX__)
   /* OptiX does not perform well with conditional trace calls, so it handles the validity of the
    * ray in the scene_intersect_shadow_all_optix(). */
   if (!intersection_ray_valid(ray)) {
@@ -127,20 +103,14 @@ ccl_device_intersect void scene_intersect_shadow_all(KernelGlobals kg,
     *throughput = one_float3();
     return;
   }
-#  endif
 
   BVHShadowAllPayload payload;
 
   /* A bit of a tricky initialization:
    * - Some backends require extra ray information for custom motion blur intersection.
    * - Some backends utilize registers to pass commonly accessed data to the trace calls. */
-#  if !defined(__KERNEL_OPTIX__)
   BVH_PAYLOAD_BASE(payload).ray_self = ray->self;
   BVH_PAYLOAD_BASE(payload).ray_visibility = visibility;
-#    if defined(__KERNEL_HIPRT__)
-  BVH_PAYLOAD_BASE(payload).ray_time = ray->time;
-#    endif
-#  endif
 
   payload.state = state;
   payload.max_transparent_hits = max_transparent_hits;
@@ -162,12 +132,8 @@ ccl_device_intersect void scene_intersect_shadow_all(KernelGlobals kg,
   {
 #  if defined(__BVH2__)
     scene_intersect_shadow_all_bvh2(kg, ray, payload);
-#  elif defined(__KERNEL_HIPRT__)
-    scene_intersect_shadow_all_hiprt(kg, ray, payload);
 #  elif defined(__KERNEL_METALRT__)
     scene_intersect_shadow_all_metalrt(ray, payload);
-#  elif defined(__KERNEL_OPTIX__)
-    scene_intersect_shadow_all_optix(ray, visibility, payload);
 #  endif
 
     *num_recorded_hits = payload.num_recorded_hits;

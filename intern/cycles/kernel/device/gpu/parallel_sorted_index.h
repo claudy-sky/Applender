@@ -34,13 +34,7 @@ ccl_device_inline void gpu_parallel_sort_bucket_pass(const uint num_states,
     atomic_store_local(&buckets[i], 0);
   }
 
-#  ifdef __KERNEL_ONEAPI__
-  /* NOTE(@nsirgien): For us here only local memory writing (buckets) is important,
-   * so faster local barriers can be used. */
-  ccl_gpu_local_syncthreads();
-#  else
   ccl_gpu_syncthreads();
-#  endif
 
   /* Determine bucket sizes within the partitions. */
 
@@ -57,13 +51,7 @@ ccl_device_inline void gpu_parallel_sort_bucket_pass(const uint num_states,
     }
   }
 
-#  ifdef __KERNEL_ONEAPI__
-  /* NOTE(@nsirgien): For us here only local memory writing (buckets) is important,
-   * so faster local barriers can be used. */
-  ccl_gpu_local_syncthreads();
-#  else
   ccl_gpu_syncthreads();
-#  endif
 
   /* Calculate the partition's local offsets from the prefix sum of bucket sizes. */
 
@@ -106,13 +94,7 @@ ccl_device_inline void gpu_parallel_sort_write_pass(const uint num_states,
     atomic_store_local(&local_offset[i], key_offsets[i] + partition_offset);
   }
 
-#  ifdef __KERNEL_ONEAPI__
-  /* NOTE(@nsirgien): For us here only local memory writing (local_offset) is important,
-   * so faster local barriers can be used. */
-  ccl_gpu_local_syncthreads();
-#  else
   ccl_gpu_syncthreads();
-#  endif
 
   /* Write the sorted active indices. */
 

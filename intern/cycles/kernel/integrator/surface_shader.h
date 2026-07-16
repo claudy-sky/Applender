@@ -375,11 +375,7 @@ ccl_device_inline float surface_shader_bsdf_eval_pdfs(const KernelGlobals kg,
   return (sum_sample_weight > 0.0f) ? sum_pdf / sum_sample_weight : 0.0f;
 }
 
-#ifndef __KERNEL_CUDA__
 ccl_device
-#else
-ccl_device_inline
-#endif
     float
     surface_shader_bsdf_eval(KernelGlobals kg,
                              ccl_attr_maybe_unused IntegratorState state,
