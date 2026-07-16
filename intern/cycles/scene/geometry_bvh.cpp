@@ -116,8 +116,7 @@ void GeometryManager::device_update_bvh(Device *device,
   LOG_INFO << "Using " << bvh_layout_name(bparams.bvh_layout) << " layout.";
 
   const bool can_refit = scene->bvh != nullptr && scene->params.bvh_type == BVH_TYPE_DYNAMIC &&
-                         (bparams.bvh_layout == BVHLayout::BVH_LAYOUT_OPTIX ||
-                          bparams.bvh_layout == BVHLayout::BVH_LAYOUT_METAL);
+                         bparams.bvh_layout == BVHLayout::BVH_LAYOUT_METAL;
 
   BVH *bvh = scene->bvh.get();
   if (bvh == nullptr) {

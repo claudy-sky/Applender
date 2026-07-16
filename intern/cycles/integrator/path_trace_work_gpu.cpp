@@ -355,8 +355,9 @@ void PathTraceWorkGPU::render_samples(RenderStatistics &statistics,
    * become busy after adding new tiles). This is especially important for the shadow catcher which
    * schedules work in halves of available number of paths. */
   work_tile_scheduler_.set_max_num_path_states(max_num_paths_ / 8);
-  work_tile_scheduler_.set_accelerated_rt(
-      (device_->get_bvh_layout_mask(device_scene_->data.kernel_features) & BVH_LAYOUT_OPTIX) != 0);
+  /* This scheduling hint gated OptiX hardware ray tracing, which has been
+   * removed; the Metal path does not use it, so it is always disabled here. */
+  work_tile_scheduler_.set_accelerated_rt(false);
   work_tile_scheduler_.reset(effective_buffer_params_,
                              start_sample,
                              samples_num,
