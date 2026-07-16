@@ -17,7 +17,77 @@
 #include "IMB_imbuf.hh"
 #include "IMB_imbuf_types.hh"
 
+#if defined(__ARM_NEON)
+#  include <arm_neon.h>
+#endif
+
 namespace blender {
+
+#if defined(__ARM_NEON)
+/* -------------------------------------------------------------------- */
+/** \name NEON premultiply / unpremultiply (Apple Silicon / Metal-only build)
+ * \{ */
+
+/* Premultiply 16 interleaved RGBA8 pixels (64 bytes) in place at `cp`.
+ * Bit-exact with `cp[c] = (cp[c] * cp[3]) >> 8` for c in {0,1,2}; alpha (cp[3])
+ * is left unmodified, matching the scalar loop.
+ * `vmull_u8` widens to u16 before the multiply, and since 255*255 = 65025 < 65536
+ * the product never overflows u16, so the `>> 8` (vshrq_n_u16) truncates exactly
+ * like the scalar's `int` right-shift on a non-negative value. */
+static inline void premultiply_rect_neon16(uint8_t *cp)
+{
+  uint8x16x4_t px = vld4q_u8(cp);
+  const uint8x16_t a = px.val[3];
+  const uint8x8_t a_lo = vget_low_u8(a);
+  const uint8x8_t a_hi = vget_high_u8(a);
+  for (int c = 0; c < 3; c++) {
+    const uint8x8_t ch_lo = vget_low_u8(px.val[c]);
+    const uint8x8_t ch_hi = vget_high_u8(px.val[c]);
+    const uint16x8_t prod_lo = vshrq_n_u16(vmull_u8(ch_lo, a_lo), 8);
+    const uint16x8_t prod_hi = vshrq_n_u16(vmull_u8(ch_hi, a_hi), 8);
+    px.val[c] = vcombine_u8(vmovn_u16(prod_lo), vmovn_u16(prod_hi));
+  }
+  vst4q_u8(cp, px);
+}
+
+/* Premultiply 4 interleaved RGBA float pixels (16 floats) in place at `cp`.
+ * Bit-exact with `cp[c] = cp[c] * cp[3]` for c in {0,1,2} (plain `vmulq_f32`, no FMA,
+ * matching the single scalar multiply exactly -- multiplication is commutative and
+ * exactly reproducible in IEEE-754, so lane order/operand order does not matter). */
+static inline void premultiply_rect_float_neon4(float *cp)
+{
+  float32x4x4_t px = vld4q_f32(cp);
+  const float32x4_t a = px.val[3];
+  px.val[0] = vmulq_f32(px.val[0], a);
+  px.val[1] = vmulq_f32(px.val[1], a);
+  px.val[2] = vmulq_f32(px.val[2], a);
+  vst4q_f32(cp, px);
+}
+
+/* Unpremultiply 4 interleaved RGBA float pixels (16 floats) in place at `cp`.
+ * Bit-exact with:
+ *   val = (alpha != 0.0f) ? 1.0f / alpha : 1.0f;
+ *   cp[c] = cp[c] * val;  // for c in {0,1,2}
+ * Uses exact division (`vdivq_f32`), never a reciprocal estimate, so `1.0f / alpha`
+ * matches the scalar division bit-for-bit. Lanes with alpha == 0 compute
+ * `1.0f / 0.0f` (well-defined IEEE-754 +-infinity, no trap), but that transient
+ * value is always replaced by 1.0f via the select before the final multiply, so it
+ * is never observed in the result. */
+static inline void unpremultiply_rect_float_neon4(float *cp)
+{
+  float32x4x4_t px = vld4q_f32(cp);
+  const float32x4_t a = px.val[3];
+  const uint32x4_t is_zero = vceqq_f32(a, vdupq_n_f32(0.0f));
+  const float32x4_t inv = vdivq_f32(vdupq_n_f32(1.0f), a);
+  const float32x4_t val = vbslq_f32(is_zero, vdupq_n_f32(1.0f), inv);
+  px.val[0] = vmulq_f32(px.val[0], val);
+  px.val[1] = vmulq_f32(px.val[1], val);
+  px.val[2] = vmulq_f32(px.val[2], val);
+  vst4q_f32(cp, px);
+}
+
+/** \} */
+#endif  /* __ARM_NEON */
 
 static void filtcolum(uchar *point, int y, int skip)
 {
@@ -351,7 +421,13 @@ void IMB_premultiply_rect(uint8_t *rect, ImColorMode color_mode, int w, int h)
     cp = rect;
 
     for (y = 0; y < h; y++) {
-      for (x = 0; x < w; x++, cp += 4) {
+      x = 0;
+#if defined(__ARM_NEON)
+      for (; x + 16 <= w; x += 16, cp += 64) {
+        premultiply_rect_neon16(cp);
+      }
+#endif
+      for (; x < w; x++, cp += 4) {
         val = cp[3];
         cp[0] = (cp[0] * val) >> 8;
         cp[1] = (cp[1] * val) >> 8;
@@ -369,7 +445,13 @@ void IMB_premultiply_rect_float(float *rect_float, int channels, int w, int h)
   if (channels == 4) {
     cp = rect_float;
     for (y = 0; y < h; y++) {
-      for (x = 0; x < w; x++, cp += 4) {
+      x = 0;
+#if defined(__ARM_NEON)
+      for (; x + 4 <= w; x += 4, cp += 16) {
+        premultiply_rect_float_neon4(cp);
+      }
+#endif
+      for (; x < w; x++, cp += 4) {
         val = cp[3];
         cp[0] = cp[0] * val;
         cp[1] = cp[1] * val;
@@ -431,7 +513,13 @@ void IMB_unpremultiply_rect_float(float *rect_float, int channels, int w, int h)
   if (channels == 4) {
     fp = rect_float;
     for (y = 0; y < h; y++) {
-      for (x = 0; x < w; x++, fp += 4) {
+      x = 0;
+#if defined(__ARM_NEON)
+      for (; x + 4 <= w; x += 4, fp += 16) {
+        unpremultiply_rect_float_neon4(fp);
+      }
+#endif
+      for (; x < w; x++, fp += 4) {
         val = fp[3] != 0.0f ? 1.0f / fp[3] : 1.0f;
         fp[0] = fp[0] * val;
         fp[1] = fp[1] * val;
