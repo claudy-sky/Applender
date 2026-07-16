@@ -78,6 +78,16 @@ class TaskScheduler {
    * possible and leave scheduling and splitting up tasks to the scheduler. */
   static int max_concurrency();
 
+  /* macOS QoS: observe the calling thread's TBB arena so worker threads
+   * executing its parallel work are classified USER_INITIATED. Safe on any
+   * thread (never re-classifies the caller). No-op on other platforms. */
+  static void qos_observe_current_arena();
+
+  /* macOS QoS: classify the calling thread itself as USER_INITIATED and
+   * observe its arena. Only for dedicated render/session threads — never the
+   * main (UI) thread. No-op on other platforms. */
+  static void qos_enter_render_thread();
+
  protected:
   static thread_mutex mutex;
   static int users;

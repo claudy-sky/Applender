@@ -430,6 +430,14 @@ void MTLContext::activate()
     }
   }
 
+  /* Reset acceleration structure bind state. Acceleration structures may be
+   * freed while another context is active; their destructor can only clear
+   * bindings of the then-current context. */
+  for (auto &as_bind : this->pipeline_state.accel_struct_bindings) {
+    as_bind.bound = false;
+    as_bind.tlas = nullptr;
+  }
+
   /* Ensure imm active. */
   immActivate();
 }
@@ -983,9 +991,10 @@ static void ensure_acceleration_structure_bindings(MTLContext &ctx,
     enc.set_acceleration_structure(accel_struct, buffer_index);
     /* The top level acceleration structure references its instanced bottom level ones
      * indirectly. They need to be made resident explicitly. */
-    for (const MTLBottomLevelAS *blas : bind.tlas->instanced_acceleration_structures()) {
-      if (blas->acceleration_structure() != nil) {
-        enc.use_resource(blas->acceleration_structure(), MTLResourceUsageRead);
+    for (id<MTLAccelerationStructure> blas_handle : bind.tlas->instanced_acceleration_structures())
+    {
+      if (blas_handle != nil) {
+        enc.use_resource(blas_handle, MTLResourceUsageRead);
       }
     }
   }

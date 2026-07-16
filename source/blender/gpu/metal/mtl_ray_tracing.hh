@@ -58,9 +58,11 @@ class MTLTopLevelAS : public TopLevelAS {
   id<MTLAccelerationStructure> accel_struct_ = nil;
   /** CPU side instance descriptors, uploaded to `instance_buffer_` at build time. */
   Vector<MTLAccelerationStructureInstanceDescriptor> instances_;
-  /** Bottom level acceleration structure of each instance. Also needed at bind time to make the
-   * indirectly referenced acceleration structures resident. */
+  /** Bottom level acceleration structure of each instance, resolved at build time. */
   Vector<const MTLBottomLevelAS *> blas_per_instance_;
+  /** Retained handles of the instanced acceleration structures, snapshotted at build time.
+   * Bind-time residency uses these so a freed BLAS wrapper cannot be dereferenced. */
+  Vector<id<MTLAccelerationStructure>> instanced_handles_;
   /** GPU buffer holding `instances_`. */
   gpu::MTLBuffer *instance_buffer_ = nullptr;
   bool is_dirty_ = true;
@@ -79,9 +81,9 @@ class MTLTopLevelAS : public TopLevelAS {
     return accel_struct_;
   }
 
-  Span<const MTLBottomLevelAS *> instanced_acceleration_structures() const
+  Span<const id<MTLAccelerationStructure>> instanced_acceleration_structures() const
   {
-    return blas_per_instance_;
+    return instanced_handles_;
   }
 };
 

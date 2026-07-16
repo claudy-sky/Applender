@@ -111,6 +111,9 @@ void MTLBottomLevelAS::add_geometry(IndexBuf &index_buffer_, VertBuf &vertex_buf
   /* Ensure GPU resident data is up to date. */
   vertex_buffer.bind();
   index_buffer.upload_data();
+  /* The encoded acceleration structure build reads the vertex buffer on the
+   * GPU timeline: a later CPU-side update must reallocate, not overwrite. */
+  vertex_buffer.flag_used();
 
   const GPUVertFormat &format = vertex_buffer.format;
   /* Metal requires 3 packed 32 bit floats for vertex positions unless
@@ -202,6 +205,10 @@ MTLTopLevelAS::~MTLTopLevelAS()
     [accel_struct_ release];
     accel_struct_ = nil;
   }
+  for (id<MTLAccelerationStructure> handle : instanced_handles_) {
+    [handle release];
+  }
+  instanced_handles_.clear();
   if (instance_buffer_ != nullptr) {
     instance_buffer_->free();
     instance_buffer_ = nullptr;
@@ -331,6 +338,17 @@ void MTLTopLevelAS::build()
   }
 
   accel_struct_ = mtl_acceleration_structure_build(*ctx, descriptor, name_get());
+
+  /* Snapshot retained handles for bind-time residency: the BLAS wrappers may
+   * be freed independently of this TLAS (e.g. batch cache invalidation). */
+  for (id<MTLAccelerationStructure> handle : instanced_handles_) {
+    [handle release];
+  }
+  instanced_handles_.clear();
+  for (id<MTLAccelerationStructure> blas : blas_array) {
+    instanced_handles_.append([blas retain]);
+  }
+
   is_dirty_ = false;
 }
 
