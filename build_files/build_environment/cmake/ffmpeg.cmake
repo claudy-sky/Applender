@@ -136,10 +136,14 @@ else()
 endif()
 
 if(APPLE)
+  # NOTE: the avfoundation input device must stay disabled (see below):
+  # Blender links libavdevice but not the AVFoundation framework.
   set(FFMPEG_EXTRA_FLAGS
     ${FFMPEG_EXTRA_FLAGS}
     --target-os=darwin
     --x86asmexe=${LIBDIR}/nasm/bin/nasm
+    --enable-videotoolbox
+    --enable-audiotoolbox
   )
 elseif(UNIX)
   set(FFMPEG_EXTRA_FLAGS
@@ -196,10 +200,8 @@ ExternalProject_Add(external_ffmpeg
       --disable-indev=qtkit
       --disable-sdl2
       --disable-gnutls
-      --disable-videotoolbox
       --disable-libxcb
       --disable-xlib
-      --disable-audiotoolbox
       --disable-cuvid
       --disable-nvenc
       --disable-indev=jack
