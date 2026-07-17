@@ -1693,7 +1693,7 @@ static int arg_handle_gpu_device_set(int argc, const char **argv, void * /*data*
 
   const char *spec = argv[1];
   if (STREQ(spec, "help")) {
-    printf("Blender GPU Device Listing (Vulkan):\n");
+    printf("GPU Device Listing:\n");
     printf("Pass an Index or Device-ID to '--gpu-device'.\n");
 #  ifdef WITH_VULKAN_BACKEND
     GPU_vulkan_supported_devices_print(stdout);

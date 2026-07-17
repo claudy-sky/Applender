@@ -74,13 +74,7 @@ static void wm_platform_support_create_link(char *link)
   DynStr *ds = BLI_dynstr_new();
 
   BLI_dynstr_append(ds, "https://docs.blender.org/manual/en/dev/troubleshooting/gpu/");
-#if defined(_WIN32)
-  BLI_dynstr_append(ds, "windows/");
-#elif defined(__APPLE__)
   BLI_dynstr_append(ds, "apple/");
-#else /* UNIX. */
-  BLI_dynstr_append(ds, "linux/");
-#endif
 
   if (GPU_type_matches(GPU_DEVICE_INTEL, GPU_OS_ANY, GPU_DRIVER_ANY)) {
     BLI_dynstr_append(ds, "intel.html");

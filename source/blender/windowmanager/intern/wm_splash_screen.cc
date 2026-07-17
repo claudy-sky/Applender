@@ -364,14 +364,9 @@ static ui::Block *wm_block_splash_create(bContext *C, ARegion *region, void * /*
     ui::menutype_draw(C, mt, &layout);
   }
 
-/* Displays a warning if blender is being emulated via Rosetta (macOS) or XTA (Windows) */
-#if defined(__APPLE__) || defined(_M_X64)
-#  if defined(__APPLE__)
+/* Displays a warning if blender is being emulated via Rosetta. */
+#if defined(__APPLE__)
   if (is_using_macos_rosetta() > 0)
-#  elif defined(_M_X64)
-  const char *proc_id = BLI_getenv("PROCESSOR_IDENTIFIER");
-  if (proc_id && strncmp(proc_id, "ARM", 3) == 0)
-#  endif
   {
     layout.separator(2.0f, ui::LayoutSeparatorType::Line);
 
@@ -387,17 +382,10 @@ static ui::Block *wm_block_splash_create(bContext *C, ARegion *region, void * /*
                                 ICON_URL,
                                 wm::OpCallContext::InvokeDefault,
                                 UI_ITEM_NONE);
-#  if defined(__APPLE__)
     RNA_string_set(
         &op_ptr,
         "url",
         "https://docs.blender.org/manual/en/latest/getting_started/installing/macos.html");
-#  elif defined(_M_X64)
-    RNA_string_set(
-        &op_ptr,
-        "url",
-        "https://docs.blender.org/manual/en/latest/getting_started/installing/windows.html");
-#  endif
 
     layout.separator();
   }
