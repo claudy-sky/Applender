@@ -311,6 +311,12 @@ void MTLBackend::pso_binary_archive_init()
           "starting fresh.\n",
           cache_dir,
           error ? [[error localizedDescription] UTF8String] : "unknown error");
+      /* The load can return a non-nil archive together with a (warning) error; it is owned (+1)
+       * and about to be replaced by the retry below, so release it or it leaks. */
+      if (archive != nil) {
+        [archive release];
+        archive = nil;
+      }
       if (file_exists) {
         BLI_delete(cache_dir, false, false);
       }
@@ -326,6 +332,9 @@ void MTLBackend::pso_binary_archive_init()
             "BLENDER_METAL_PSO_ARCHIVE: failed to create empty archive (%s); PSO archive "
             "disabled for this session.\n",
             error ? [[error localizedDescription] UTF8String] : "unknown error");
+        if (archive != nil) {
+          [archive release];
+        }
         return;
       }
     }

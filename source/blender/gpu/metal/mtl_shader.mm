@@ -1009,8 +1009,15 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
      * intentionally never set -- so attaching the archive here is always safe. */
     id<MTLBinaryArchive> pso_archive = (id<MTLBinaryArchive>)MTLBackend::get()
                                             ->get_pso_binary_archive_raw();
+    std::unique_lock<std::mutex> pso_archive_lock;
     if (pso_archive) {
       desc.binaryArchives = @[pso_archive];
+      /* MTLBinaryArchive is not documented thread-safe for concurrent lookup vs mutation, and the
+       * creation call below performs an archive lookup while another bake thread may be
+       * harvesting. Hold the archive mutex across creation + harvest; this serializes PSO
+       * compiles only while the opt-in archive is active. */
+      pso_archive_lock = std::unique_lock<std::mutex>(
+          MTLBackend::get()->get_pso_binary_archive_mutex());
     }
 
     /* Compile PSO */
@@ -1030,12 +1037,10 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
       return nullptr;
     }
 
-    /* Harvest the freshly-baked PSO into the archive for future warm starts. Bake calls can run
-     * concurrently on shader-compiler worker threads, so mutation is guarded by the archive's
-     * dedicated mutex; harvesting failure must never fail rendering -- log and continue with the
-     * already-successful `pso`. */
+    /* Harvest the freshly-baked PSO into the archive for future warm starts, still under the
+     * archive mutex acquired before creation (see above); harvesting failure must never fail
+     * rendering -- log and continue with the already-successful `pso`. */
     if (pso_archive) {
-      std::lock_guard<std::mutex> lock(MTLBackend::get()->get_pso_binary_archive_mutex());
       NSError *harvest_error = nullptr;
       if (![pso_archive addRenderPipelineFunctionsWithDescriptor:desc error:&harvest_error]) {
         MTL_LOG_WARNING(
@@ -1043,6 +1048,7 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
             this->name,
             harvest_error ? [[harvest_error localizedDescription] UTF8String] : "unknown error");
       }
+      pso_archive_lock.unlock();
     }
 
     /* Prepare pipeline state instance. */
@@ -1130,8 +1136,15 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
    * intentionally never set -- so attaching the archive here is always safe. */
   id<MTLBinaryArchive> pso_archive = (id<MTLBinaryArchive>)MTLBackend::get()
                                           ->get_pso_binary_archive_raw();
+  std::unique_lock<std::mutex> pso_archive_lock;
   if (pso_archive) {
     desc.binaryArchives = @[pso_archive];
+    /* MTLBinaryArchive is not documented thread-safe for concurrent lookup vs mutation, and the
+     * creation call below performs an archive lookup while another bake thread may be harvesting.
+     * Hold the archive mutex across creation + harvest; this serializes PSO compiles only while
+     * the opt-in archive is active. */
+    pso_archive_lock = std::unique_lock<std::mutex>(
+        MTLBackend::get()->get_pso_binary_archive_mutex());
   }
 
   id<MTLComputePipelineState> pso = [ctx->device
@@ -1168,12 +1181,10 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
   }
 
   /* Harvest the freshly-baked PSO into the archive for future warm starts, before `desc` (which
-   * the archive needs to identify the function it just compiled) is released below. Bake calls
-   * can run concurrently on shader-compiler worker threads, so mutation is guarded by the
-   * archive's dedicated mutex; harvesting failure must never fail rendering -- log and continue
-   * with the already-successful `pso`. */
+   * the archive needs to identify the function it just compiled) is released below, still under
+   * the archive mutex acquired before creation (see above); harvesting failure must never fail
+   * rendering -- log and continue with the already-successful `pso`. */
   if (pso_archive && pso) {
-    std::lock_guard<std::mutex> lock(MTLBackend::get()->get_pso_binary_archive_mutex());
     NSError *harvest_error = nullptr;
     if (![pso_archive addComputePipelineFunctionsWithDescriptor:desc error:&harvest_error]) {
       MTL_LOG_WARNING(
@@ -1181,6 +1192,9 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
           this->name,
           harvest_error ? [[harvest_error localizedDescription] UTF8String] : "unknown error");
     }
+  }
+  if (pso_archive_lock.owns_lock()) {
+    pso_archive_lock.unlock();
   }
 
   [desc release];
