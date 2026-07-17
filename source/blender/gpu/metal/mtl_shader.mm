@@ -11,9 +11,11 @@
 #include "DNA_userdef_types.h"
 
 #include "BLI_string.hh"
+#include "BLI_threads.hh"
 #include "BLI_time.hh"
 
 #include <algorithm>
+#include <dispatch/dispatch.h>
 #include <fmt/format.h>
 #include <fstream>
 #include <iostream>
@@ -91,6 +93,20 @@ MTLShader::MTLShader(MTLContext *ctx, const char *name) : Shader(name)
 
 MTLShader::~MTLShader()
 {
+  /* Wait for any in-flight background specialized-PSO bakes (dispatched from
+   * #bake_graphic_pipeline_state / #bake_compute_pipeline_state) to finish and unregister
+   * themselves before touching any Metal resource below. A background bake only ever reads
+   * `this`'s already-finalized state (shader libraries, `constants`, etc.) and, on completion,
+   * inserts its result into the caches under `pso_cache_lock_` -- so once both "building" sets
+   * are empty here, no background job can still be touching `this`, and it is safe to free
+   * everything below exactly as before. */
+  {
+    std::unique_lock<std::mutex> pending_bakes_lock(pso_cache_lock_);
+    pso_cache_building_cv_.wait(pending_bakes_lock, [this] {
+      return pso_cache_building_.is_empty() && compute_pso_cache_building_.is_empty();
+    });
+  }
+
   if (this->is_valid()) {
     /* Free uniform data block. */
     MEM_SAFE_DELETE(push_constant_buf_);
@@ -743,6 +759,18 @@ MTLRenderPipelineStateInstance *MTLShader::bake_current_pipeline_state(
   return bake_graphic_pipeline_state(ctx, prim_type, pipeline_descriptor);
 }
 
+/**
+ * Kill-switch for asynchronous specialized-PSO compilation (see #bake_graphic_pipeline_state()
+ * and #bake_compute_pipeline_state() below). When set, specialized PSO variants are always
+ * compiled synchronously on the calling thread, exactly matching pre-optimization behavior.
+ * Checked once and cached, matching the `BLENDER_METAL_FORCE_CLEAR` pattern in
+ * mtl_framebuffer.mm. */
+static bool mtl_sync_pso_enabled()
+{
+  static const bool sync_pso = (getenv("BLENDER_METAL_SYNC_PSO") != nullptr);
+  return sync_pso;
+}
+
 /* Variant which bakes a pipeline state based on an existing MTLRenderPipelineStateDescriptor.
  * This function should be callable from a secondary compilation thread. */
 MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
@@ -762,20 +790,99 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
     return pipeline_state;
   }
 
-  /* TODO: When fetching a specialized variant of a shader, if this does not yet exist, verify
-   * whether the base unspecialized variant exists:
-   * - If unspecialized version exists: Compile specialized PSO asynchronously, returning base PSO
-   * and flagging state of specialization in cache as being built.
-   * - If unspecialized does NOT exist, build specialized version straight away, as we pay the
-   * cost of compilation in both cases regardless. */
+  /* When fetching a specialized variant of a shader that does not yet exist, check whether the
+   * base unspecialized variant exists:
+   * - If the base variant exists: compile the specialized PSO asynchronously on a background
+   *   queue, returning the base PSO for this draw and flagging the specialized descriptor as
+   *   "building" so it is not dispatched twice. A later cache lookup for the same descriptor
+   *   will pick up the specialized PSO once the background bake has landed it in the cache.
+   * - If the base variant does NOT exist, build the requested (specialized) variant straight
+   *   away, as we pay the cost of compilation synchronously in both cases regardless.
+   * Only considered on the main thread: #MTLShaderCompiler already bakes PSOs (via warm_cache()
+   * / specialize_shader()) from dedicated background compiler threads, each bound to its own
+   * secondary #MTLContext -- dispatching those asynchronously again would both stack async hops
+   * needlessly, and defer work that callers of the async-compilation API are relying on being
+   * finished by the time that worker job completes. Restricting to the main thread also keeps
+   * `ctx` (captured below only as `ctx->device`) trivially valid: the main context lives for the
+   * whole application session.
+   * Kill-switch: `BLENDER_METAL_SYNC_PSO=1` disables this and always compiles synchronously,
+   * exactly matching pre-optimization behavior. */
+  if (!mtl_sync_pso_enabled() && BLI_thread_is_main()) {
+    SpecializationStateDescriptor default_specialization_state{this->constants->values};
+    if (!(pipeline_descriptor.specialization_state == default_specialization_state)) {
+      MTLRenderPipelineStateDescriptor base_descriptor = pipeline_descriptor;
+      base_descriptor.specialization_state = default_specialization_state;
 
+      pso_cache_lock_.lock();
+      MTLRenderPipelineStateInstance **base_lookup = pso_cache_.lookup_ptr(base_descriptor);
+      MTLRenderPipelineStateInstance *base_pso = (base_lookup) ? *base_lookup : nullptr;
+      if (base_pso != nullptr) {
+        /* Base variant is ready: dispatch the specialized bake in the background (unless one is
+         * already in flight for this exact descriptor) and hand back the base PSO immediately. */
+        bool already_building = pso_cache_building_.contains(pipeline_descriptor);
+        if (!already_building) {
+          pso_cache_building_.add(pipeline_descriptor);
+        }
+        pso_cache_lock_.unlock();
+
+        if (!already_building) {
+          /* Capture `device`, not `ctx`: the compile helper only ever dereferences
+           * `ctx->device`, and reading it here -- on the calling (main) thread, while `ctx` is
+           * known-valid -- means the background block never has to touch `ctx` itself. `this`
+           * (the #MTLShader) is kept alive for the duration of the background job by
+           * ~MTLShader(), which blocks on `pso_cache_building_cv_` until `pso_cache_building_`
+           * and `compute_pso_cache_building_` are both empty before releasing any Metal
+           * resources. The descriptor is captured by value, and the background bake writes into
+           * its own freshly-allocated `MTLRenderPipelineDescriptor` rather than the shared
+           * `pso_descriptor_` used by the synchronous path below, so the two can never race. */
+          id<MTLDevice> device = ctx->device;
+          MTLRenderPipelineStateDescriptor descriptor_copy = pipeline_descriptor;
+          dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            @autoreleasepool {
+              ::MTLRenderPipelineDescriptor *async_desc =
+                  [[MTLRenderPipelineDescriptor alloc] init];
+              this->bake_graphic_pipeline_state_compile(
+                  prim_type, descriptor_copy, device, async_desc);
+              [async_desc release];
+
+              pso_cache_lock_.lock();
+              pso_cache_building_.remove(descriptor_copy);
+              pso_cache_lock_.unlock();
+              pso_cache_building_cv_.notify_all();
+            }
+          });
+        }
+        return base_pso;
+      }
+      pso_cache_lock_.unlock();
+      /* Base variant not cached yet: fall through and compile the requested specialized variant
+       * synchronously below, exactly as before. */
+    }
+  }
+
+  return bake_graphic_pipeline_state_compile(
+      prim_type, pipeline_descriptor, ctx->device, pso_descriptor_);
+}
+
+/* Performs the actual Metal PSO compilation for #bake_graphic_pipeline_state(), shared by both
+ * the synchronous path and the background specialized-bake path dispatched from it. Takes
+ * `device` explicitly rather than an `MTLContext *`, and `desc` (the API descriptor to populate)
+ * explicitly rather than reaching for the shared `pso_descriptor_` member, so that it is safe to
+ * call concurrently with another (synchronous) call to this same function, on a different
+ * thread, for the same #MTLShader -- see the caller above for how each path sources these two
+ * parameters. This function should be callable from a secondary thread. */
+MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state_compile(
+    MTLPrimitiveTopologyClass prim_type,
+    const MTLRenderPipelineStateDescriptor &pipeline_descriptor,
+    id<MTLDevice> device,
+    ::MTLRenderPipelineDescriptor *desc)
+{
   /* Prepare Render Pipeline Descriptor. */
 
   ::MTLFunctionConstantValues *values = populate_specialization_constant_values(
       *this->constants, pipeline_descriptor.specialization_state);
 
   /* Prepare Vertex descriptor based on current pipeline vertex binding state. */
-  ::MTLRenderPipelineDescriptor *desc = pso_descriptor_;
   [desc reset];
   desc.label = [NSString stringWithUTF8String:this->name];
 
@@ -965,7 +1072,7 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
     NSError *error = nullptr;
 
     /* Compile PSO */
-    id<MTLRenderPipelineState> pso = [ctx->device
+    id<MTLRenderPipelineState> pso = [device
         newRenderPipelineStateWithDescriptor:desc
                                      options:MTLPipelineOptionBufferTypeInfo
                                   reflection:&reflection_data
@@ -1024,14 +1131,69 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
     BLI_assert(pipeline_state->pso != nil);
     return pipeline_state;
   }
+
+  /* Compile specialized shader variants asynchronously where possible -- see
+   * #bake_graphic_pipeline_state() above for the full rationale; the same base-variant /
+   * building-set / main-thread-only / kill-switch reasoning applies here. Unlike the graphics
+   * path, #bake_compute_pipeline_state_compile() already allocates its own local
+   * `MTLComputePipelineDescriptor` per call rather than reusing a shared member, so no extra
+   * descriptor plumbing is required to make concurrent calls safe. */
+  if (!mtl_sync_pso_enabled() && BLI_thread_is_main()) {
+    SpecializationStateDescriptor default_specialization_state{this->constants->values};
+    if (!(compute_pipeline_descriptor.specialization_state == default_specialization_state)) {
+      MTLComputePipelineStateDescriptor base_descriptor = compute_pipeline_descriptor;
+      base_descriptor.specialization_state = default_specialization_state;
+
+      pso_cache_lock_.lock();
+      MTLComputePipelineStateInstance *const *base_lookup = compute_pso_cache_.lookup_ptr(
+          base_descriptor);
+      MTLComputePipelineStateInstance *base_pso = (base_lookup) ? *base_lookup : nullptr;
+      if (base_pso != nullptr) {
+        bool already_building = compute_pso_cache_building_.contains(compute_pipeline_descriptor);
+        if (!already_building) {
+          compute_pso_cache_building_.add(compute_pipeline_descriptor);
+        }
+        pso_cache_lock_.unlock();
+
+        if (!already_building) {
+          id<MTLDevice> device = ctx->device;
+          MTLComputePipelineStateDescriptor descriptor_copy = compute_pipeline_descriptor;
+          dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            @autoreleasepool {
+              this->bake_compute_pipeline_state_compile(descriptor_copy, device);
+
+              pso_cache_lock_.lock();
+              compute_pso_cache_building_.remove(descriptor_copy);
+              pso_cache_lock_.unlock();
+              pso_cache_building_cv_.notify_all();
+            }
+          });
+        }
+        return base_pso;
+      }
+      pso_cache_lock_.unlock();
+    }
+  }
+
+  return bake_compute_pipeline_state_compile(compute_pipeline_descriptor, ctx->device);
+}
+
+/* Performs the actual Metal compute PSO compilation for #bake_compute_pipeline_state(), shared
+ * by both the synchronous path and the background specialized-bake path dispatched from it.
+ * Takes `device` explicitly rather than an `MTLContext *` -- see
+ * #bake_graphic_pipeline_state_compile() for why. Always allocates its own local
+ * `MTLComputePipelineDescriptor` (as the original synchronous-only code already did), so no
+ * further changes were needed here to make concurrent calls safe. This function should be
+ * callable from a secondary thread. */
+MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state_compile(
+    const MTLComputePipelineStateDescriptor &compute_pipeline_descriptor, id<MTLDevice> device)
+{
   /* Prepare Compute Pipeline Descriptor. */
 
   /* Setup function specialization constants, used to modify and optimize
    * generated code based on current render pipeline configuration. */
   ::MTLFunctionConstantValues *values = populate_specialization_constant_values(
       *this->constants, compute_pipeline_descriptor.specialization_state);
-
-  /* TODO: Compile specialized shader variants asynchronously. */
 
   std::string function_name = entry_point_name_get(ShaderStage::COMPUTE);
   NSError *error = nullptr;
@@ -1061,11 +1223,10 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
   desc.label = [NSString stringWithUTF8String:this->name];
   desc.computeFunction = compute_function;
 
-  id<MTLComputePipelineState> pso = [ctx->device
-      newComputePipelineStateWithDescriptor:desc
-                                    options:MTLPipelineOptionNone
-                                 reflection:nullptr
-                                      error:&error];
+  id<MTLComputePipelineState> pso = [device newComputePipelineStateWithDescriptor:desc
+                                                                          options:MTLPipelineOptionNone
+                                                                       reflection:nullptr
+                                                                            error:&error];
 
   /* If PSO has compiled but max theoretical threads-per-threadgroup is lower than required
    * dispatch size, recompile with increased limit. NOTE: This will result in a performance drop,
@@ -1087,10 +1248,10 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
       [pso release];
       pso = nil;
       desc.maxTotalThreadsPerThreadgroup = 1024;
-      pso = [ctx->device newComputePipelineStateWithDescriptor:desc
-                                                       options:MTLPipelineOptionNone
-                                                    reflection:nullptr
-                                                         error:&error];
+      pso = [device newComputePipelineStateWithDescriptor:desc
+                                                    options:MTLPipelineOptionNone
+                                                 reflection:nullptr
+                                                      error:&error];
     }
   }
 
