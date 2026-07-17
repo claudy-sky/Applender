@@ -67,4 +67,16 @@ void CAD_OT_extrude(wmOperatorType *ot);
 
 void CAD_OT_boolean(wmOperatorType *ot);
 
+/* *** cad_fillet.cc *** */
+
+void CAD_OT_fillet(wmOperatorType *ot);
+void CAD_OT_chamfer(wmOperatorType *ot);
+
+/* *** cad_io.cc *** */
+
+void CAD_OT_export_step(wmOperatorType *ot);
+void CAD_OT_export_iges(wmOperatorType *ot);
+void CAD_OT_import_step(wmOperatorType *ot);
+void CAD_OT_import_iges(wmOperatorType *ot);
+
 }  // namespace blender

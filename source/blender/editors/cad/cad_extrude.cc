@@ -8,9 +8,12 @@
  * Modal operator that creates a CAD solid by extruding a rectangular profile
  * placed at the 3D cursor, with a live tessellated preview while dragging.
  *
- * NOTE: this first slice deliberately has no gizmo group. The modal drag is
- * the interaction; an arrow gizmo (#GIZMO_GT_arrow_3d) becomes worthwhile once
- * committed solids can be re-edited, which is a later feature.
+ * The raw modal mouse-delta drag (see #cad_extrude_modal) is the primary
+ * interaction. In addition, once the operator finishes, a visible draggable
+ * arrow gizmo (#GIZMO_GT_arrow_3d, group #VIEW3D_GGT_cad_extrude) is shown on
+ * the new solid as a Shapr3D-style explicit handle: dragging it edits the
+ * operator's `distance` redo property and re-runs the operator. This mirrors
+ * #MESH_GGT_bisect and keeps the modal drag working unchanged as a fallback.
  */
 
 #include <fmt/format.h>
@@ -21,13 +24,17 @@
 
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
+#include "DNA_screen_types.h"
+#include "DNA_space_types.h"
 #include "DNA_view3d_types.h"
 
 #include "BLI_sys_types.hh"
+#include "BLI_utildefines.hh"
 
 #include "BLT_translation.hh"
 
 #include "BKE_context.hh"
+#include "BKE_layer.hh"
 #include "BKE_report.hh"
 
 #include "DEG_depsgraph_build.hh"
@@ -39,9 +46,14 @@
 #include "WM_types.hh"
 
 #include "ED_cad.hh"
+#include "ED_gizmo_library.hh"
+#include "ED_gizmo_utils.hh"
 #include "ED_object.hh"
 #include "ED_screen.hh"
+#include "ED_undo.hh"
 #include "ED_view3d.hh"
+
+#include "UI_resources.hh"
 
 #include "OCCT_bridge.hh"
 
@@ -133,6 +145,20 @@ static void cad_extrude_cancel(bContext *C, wmOperator *op)
   }
 }
 
+/**
+ * Link the extrude arrow-gizmo group into the active View3D so the handle appears on the
+ * freshly created solid. Called once the operator has committed (see #VIEW3D_GGT_cad_extrude).
+ * The group's own poll (#ED_gizmo_poll_or_unlink_delayed_from_operator) removes it again once
+ * #CAD_OT_extrude is no longer the last redo operator.
+ */
+static void cad_extrude_gizmo_group_ensure(bContext *C)
+{
+  const View3D *v3d = CTX_wm_view3d(C);
+  if (v3d && (v3d->gizmo_flag & V3D_GIZMO_HIDE) == 0) {
+    WM_gizmo_group_type_ensure("VIEW3D_GGT_cad_extrude");
+  }
+}
+
 static wmOperatorStatus cad_extrude_confirm(bContext *C, wmOperator *op)
 {
   CADExtrudeData *opdata = static_cast<CADExtrudeData *>(op->customdata);
@@ -162,6 +188,7 @@ static wmOperatorStatus cad_extrude_confirm(bContext *C, wmOperator *op)
   WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, opdata->object);
 
   cad_extrude_exit(C, op);
+  cad_extrude_gizmo_group_ensure(C);
   return OPERATOR_FINISHED;
 }
 
@@ -196,6 +223,7 @@ static wmOperatorStatus cad_extrude_exec(bContext *C, wmOperator *op)
   WM_event_add_notifier(C, NC_GEOM | ND_DATA, ob->data);
   WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, ob);
 
+  cad_extrude_gizmo_group_ensure(C);
   return OPERATOR_FINISHED;
 }
 
@@ -312,10 +340,155 @@ void CAD_OT_extrude(wmOperatorType *ot)
                          100.0f);
 }
 
+/* -------------------------------------------------------------------- */
+/** \name Extrude Distance Gizmo (redo affordance)
+ *
+ * A visible arrow handle shown on the just-created solid after #CAD_OT_extrude finishes.
+ * Dragging it edits the operator's `distance` redo property and re-runs the operator via
+ * #ED_undo_operator_repeat. Structurally this mirrors #MESH_GGT_bisect: the gizmo group is
+ * driven entirely from the last-redo operator (#WM_operator_last_redo), so it does not touch
+ * the running modal operator's private state and the raw modal drag stays the fallback.
+ * \{ */
+
+/** Per-instance data for one #VIEW3D_GGT_cad_extrude gizmo group. */
+struct CADExtrudeGizmoGroup {
+  /** The single draggable arrow handle. */
+  wmGizmo *arrow;
+  /** Context captured at setup, needed to repeat the operator from the property setter. */
+  bContext *context;
+  /** The extrude operator whose `distance` redo property the arrow edits. */
+  wmOperator *op;
+  /** Cached lookup of the `distance` property on `op->ptr`. */
+  PropertyRNA *prop_distance;
+};
+
+static void cad_extrude_gizmo_distance_get(const wmGizmo *gz,
+                                           wmGizmoProperty * /*gz_prop*/,
+                                           void *value_p)
+{
+  const CADExtrudeGizmoGroup *ggd = static_cast<CADExtrudeGizmoGroup *>(
+      gz->parent_gzgroup->customdata);
+  *static_cast<float *>(value_p) = RNA_property_float_get(ggd->op->ptr, ggd->prop_distance);
+}
+
+static void cad_extrude_gizmo_distance_set(const wmGizmo *gz,
+                                           wmGizmoProperty * /*gz_prop*/,
+                                           const void *value_p)
+{
+  CADExtrudeGizmoGroup *ggd = static_cast<CADExtrudeGizmoGroup *>(gz->parent_gzgroup->customdata);
+  RNA_property_float_set(ggd->op->ptr, ggd->prop_distance, *static_cast<const float *>(value_p));
+
+  /* Writing the RNA property does not re-run the operator on its own, so repeat it explicitly
+   * (see #MESH_GGT_bisect). Guard against repeating a stale operator. */
+  if (ggd->op == WM_operator_last_redo(ggd->context)) {
+    ED_undo_operator_repeat(ggd->context, ggd->op);
+  }
+}
+
+/** Place the arrow at the active object's origin, oriented along its local +Z (extrusion axis). */
+static void cad_extrude_gizmo_reposition(const bContext *C, CADExtrudeGizmoGroup *ggd)
+{
+  const Main *bmain = CTX_data_main(C);
+  const Scene *scene = CTX_data_scene(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
+  const Object *ob = BKE_view_layer_active_object_get(view_layer);
+  if (ob == nullptr) {
+    WM_gizmo_set_flag(ggd->arrow, WM_GIZMO_HIDDEN, true);
+    return;
+  }
+  WM_gizmo_set_flag(ggd->arrow, WM_GIZMO_HIDDEN, false);
+  WM_gizmo_set_matrix_location(ggd->arrow, ob->object_to_world().location());
+  WM_gizmo_set_matrix_rotation_from_z_axis(ggd->arrow, ob->object_to_world().ptr()[2]);
+}
+
+static bool cad_extrude_gizmo_poll(const bContext *C, wmGizmoGroupType *gzgt)
+{
+  /* Show only while #CAD_OT_extrude is the last redo operator, auto-unlink otherwise. */
+  return ED_gizmo_poll_or_unlink_delayed_from_operator(C, gzgt, "CAD_OT_extrude");
+}
+
+static void cad_extrude_gizmo_setup(const bContext *C, wmGizmoGroup *gzgroup)
+{
+  wmOperator *op = WM_operator_last_redo(C);
+  if (op == nullptr || !STREQ(op->type->idname, "CAD_OT_extrude")) {
+    return;
+  }
+
+  CADExtrudeGizmoGroup *ggd = MEM_new<CADExtrudeGizmoGroup>(__func__);
+  gzgroup->customdata = ggd;
+  gzgroup->customdata_free = [](void *data) {
+    MEM_delete(static_cast<CADExtrudeGizmoGroup *>(data));
+  };
+
+  ggd->context = const_cast<bContext *>(C);
+  ggd->op = op;
+  ggd->prop_distance = RNA_struct_find_property(op->ptr, "distance");
+
+  ggd->arrow = WM_gizmo_new("GIZMO_GT_arrow_3d", gzgroup, nullptr);
+  RNA_enum_set(ggd->arrow->ptr, "transform", ED_GIZMO_ARROW_XFORM_FLAG_CONSTRAINED);
+  ui::theme::get_color_3fv(TH_GIZMO_PRIMARY, ggd->arrow->color);
+  ui::theme::get_color_3fv(TH_GIZMO_HI, ggd->arrow->color_hi);
+
+  cad_extrude_gizmo_reposition(C, ggd);
+
+  wmGizmoPropertyFnParams params{};
+  params.value_get_fn = cad_extrude_gizmo_distance_get;
+  params.value_set_fn = cad_extrude_gizmo_distance_set;
+  params.range_get_fn = nullptr;
+  params.user_data = nullptr;
+  WM_gizmo_target_property_def_func(ggd->arrow, "offset", &params);
+}
+
+static void cad_extrude_gizmo_draw_prepare(const bContext *C, wmGizmoGroup *gzgroup)
+{
+  CADExtrudeGizmoGroup *ggd = static_cast<CADExtrudeGizmoGroup *>(gzgroup->customdata);
+  if (ggd == nullptr) {
+    return;
+  }
+  /* A redo replaces the operator instance; re-fetch it (see #MESH_GGT_bisect). */
+  if (ggd->op->next) {
+    ggd->op = WM_operator_last_redo(ggd->context);
+    if (ggd->op != nullptr) {
+      ggd->prop_distance = RNA_struct_find_property(ggd->op->ptr, "distance");
+    }
+  }
+  if (ggd->op != nullptr) {
+    cad_extrude_gizmo_reposition(C, ggd);
+  }
+}
+
+void VIEW3D_GGT_cad_extrude(wmGizmoGroupType *gzgt)
+{
+  gzgt->name = "CAD Extrude Widget";
+  gzgt->idname = "VIEW3D_GGT_cad_extrude";
+
+  gzgt->flag = WM_GIZMOGROUPTYPE_3D;
+
+  gzgt->gzmap_params.spaceid = SPACE_VIEW3D;
+  gzgt->gzmap_params.regionid = RGN_TYPE_WINDOW;
+
+  gzgt->poll = cad_extrude_gizmo_poll;
+  gzgt->setup = cad_extrude_gizmo_setup;
+  gzgt->draw_prepare = cad_extrude_gizmo_draw_prepare;
+}
+
+/** \} */
+
 void ED_operatortypes_cad()
 {
+  /* Operators. */
   WM_operatortype_append(CAD_OT_extrude);
   WM_operatortype_append(CAD_OT_boolean);
+  WM_operatortype_append(CAD_OT_fillet);
+  WM_operatortype_append(CAD_OT_chamfer);
+  WM_operatortype_append(CAD_OT_export_step);
+  WM_operatortype_append(CAD_OT_export_iges);
+  WM_operatortype_append(CAD_OT_import_step);
+  WM_operatortype_append(CAD_OT_import_iges);
+
+  /* Gizmo groups. */
+  WM_gizmogrouptype_append(VIEW3D_GGT_cad_extrude);
 }
 
 }  // namespace blender

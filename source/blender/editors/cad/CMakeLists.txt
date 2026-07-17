@@ -14,7 +14,9 @@ set(INC_SYS
 set(SRC
   cad_boolean.cc
   cad_extrude.cc
+  cad_fillet.cc
   cad_idprop.cc
+  cad_io.cc
 
   cad_intern.hh
 )
