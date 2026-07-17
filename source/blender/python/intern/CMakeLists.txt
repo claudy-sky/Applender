@@ -351,6 +351,13 @@ if(WITH_HYDRA)
   add_definitions(-DWITH_HYDRA)
 endif()
 
+if(WITH_MCP)
+  list(APPEND LIB
+    bf_python_mcp
+  )
+  add_definitions(-DWITH_MCP)
+endif()
+
 if(WITH_EXPERIMENTAL_FEATURES)
   add_definitions(-DWITH_EXPERIMENTAL_FEATURES)
 endif()

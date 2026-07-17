@@ -165,13 +165,8 @@ ccl_device_inline half3 fallback_float3_to_half3(const float3 f)
 
 ccl_device_inline float half_to_float(half h)
 {
-#if defined(__KERNEL_METAL__) || defined(__KERNEL_ONEAPI__)
+#if defined(__KERNEL_METAL__)
   return float(h);
-#elif defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
-  return __half2float(h);
-/* We assume half instructions are always supported when there is ARM Neon,
- * which implies ARMv8.2-A+. There is no official Blender minimum, but is
- * already assumed elsewhere in Blender and not that recent. */
 #elif defined(__ARM_NEON) || defined(_M_ARM64)
   uint16x4_t v = vdup_n_u16(uint16_t(h));
   return vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(v)), 0);
@@ -185,10 +180,8 @@ ccl_device_inline float half_to_float(half h)
 
 ccl_device_inline half float_to_half(const float f)
 {
-#if defined(__KERNEL_METAL__) || defined(__KERNEL_ONEAPI__)
+#if defined(__KERNEL_METAL__)
   return half(f);
-#elif defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
-  return __float2half(f);
 #elif defined(__ARM_NEON) || defined(_M_ARM64)
   return half(vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(vdupq_n_f32(f))), 0));
 #elif defined(__F16C__)
@@ -202,10 +195,6 @@ ccl_device_inline half4 float4_to_half4(const float4 f)
 {
 #if defined(__KERNEL_METAL__)
   return {half(f.x), half(f.y), half(f.z), half(f.w)};
-#elif defined(__KERNEL_ONEAPI__)
-  return {half(f.x), half(f.y), half(f.z), half(f.w)};
-#elif defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
-  return {__float2half(f.x), __float2half(f.y), __float2half(f.z), __float2half(f.w)};
 #elif defined(__ARM_NEON) || defined(_M_ARM64)
   half4 r;
   vst1_u16(reinterpret_cast<uint16_t *>(&r),
@@ -226,10 +215,6 @@ ccl_device_inline float4 half4_to_float4(const half4 h)
 {
 #if defined(__KERNEL_METAL__)
   return {float(h.x), float(h.y), float(h.z), float(h.w)};
-#elif defined(__KERNEL_ONEAPI__)
-  return {float(h.x), float(h.y), float(h.z), float(h.w)};
-#elif defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
-  return {__half2float(h.x), __half2float(h.y), __half2float(h.z), __half2float(h.w)};
 #elif defined(__ARM_NEON) || defined(_M_ARM64)
   float4 r;
   vst1q_f32(&r.x,

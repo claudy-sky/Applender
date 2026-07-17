@@ -648,7 +648,7 @@ ccl_device_inline float4 interp(float4 a, float4 b, float t)
   return a + t * (b - a);
 }
 
-#if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
+#if !defined(__KERNEL_METAL__)
 /* Int/Float conversion */
 ccl_device_inline int4 __float4_as_int4(const float4 f)
 {
@@ -669,7 +669,7 @@ ccl_device_inline float4 __int4_as_float4(const int4 i)
       __int_as_float(i.x), __int_as_float(i.y), __int_as_float(i.z), __int_as_float(i.w));
 #  endif
 }
-#endif /* !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__) */
+#endif /* !defined(__KERNEL_METAL__) */
 
 ccl_device_inline void copy_v4_v4(ccl_private float *r, const float4 val)
 {

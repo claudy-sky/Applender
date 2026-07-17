@@ -213,11 +213,7 @@ principled_bsdf_emission(KernelGlobals kg,
 }
 
 template<uint node_feature_mask, ShaderType shader_type>
-#ifndef __KERNEL_ONEAPI__
 ccl_device_noinline
-#else
-ccl_device
-#endif
     int
     svm_node_closure_bsdf(KernelGlobals kg,
                           ccl_private ShaderData *sd,

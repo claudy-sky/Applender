@@ -50,7 +50,7 @@ ccl_device_inline bool motion_triangle_intersect(KernelGlobals kg,
   float u;
   float v;
   if (ray_triangle_intersect(P, dir, tmin, tmax, verts[0], verts[1], verts[2], &u, &v, &t)) {
-#if defined(__VISIBILITY_FLAG__) && !defined(__KERNEL_HIPRT__)
+#if defined(__VISIBILITY_FLAG__)
     /* Visibility flag test. we do it here under the assumption that most triangles are culled by
      * node flags.
      * Note that HIP-RT performs visibility check on the instance level. */

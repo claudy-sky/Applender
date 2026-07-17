@@ -71,7 +71,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Initialize Project
 
-project(Blender)
+project(Applender)
 
 enable_testing()
 
@@ -200,6 +200,11 @@ Enable building as a Python module which runs without a user interface, \
 like running regular Blender in background mode (only enable for development), \
 installs to PYTHON_SITE_PACKAGES (or CMAKE_INSTALL_PREFIX if WITH_INSTALL_PORTABLE is enabled)."
   OFF
+)
+
+option(WITH_MCP "\
+Build the native MCP (Model Context Protocol) client (bpy.mcp + intern/mcp)."
+  ON
 )
 
 option(WITH_BUILDINFO "\
@@ -709,6 +714,14 @@ mark_as_advanced(WITH_COMPILER_ASAN_EXTERN)
 # (both CLANG/LLVM and GCC ones).
 set_and_warn_incompatible(WITH_COMPILER_ASAN WITH_MEM_VALGRIND OFF)
 set_and_warn_incompatible(WITH_COMPILER_ASAN_EXTERN WITH_MEM_VALGRIND OFF)
+
+option(WITH_HARDENING "\
+Enable defense-in-depth compiler and standard-library hardening: stack protector, \
+libc++ bounds/validity assertions (_LIBCPP_HARDENING_MODE), and fortified libc calls. \
+Low overhead; applied on the Apple build. Disable for maximum performance or when \
+diagnosing hardening-flag incompatibilities."
+  ON)
+mark_as_advanced(WITH_HARDENING)
 
 option(WITH_COMPILER_CODE_COVERAGE "\
 Build and link with code coverage support (only for Debug targets)."

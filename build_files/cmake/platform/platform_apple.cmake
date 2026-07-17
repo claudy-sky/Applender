@@ -395,6 +395,24 @@ endif()
 # Clang has too low template depth of 128 for libmv.
 string(APPEND CMAKE_CXX_FLAGS " -ftemplate-depth=1024")
 
+# ---------------------------------------------------------------------
+# Defense-in-depth hardening (Applender). Toggle with WITH_HARDENING.
+#
+# These reduce the impact of memory-safety bugs in the existing C/C++ core
+# without a language change. They are intentionally warnings-only (no -Werror)
+# and low overhead so they can stay on by default; disable with
+# -DWITH_HARDENING=OFF if a specific flag is unsupported by the local toolchain.
+if(WITH_HARDENING)
+  # Stack canaries and format-string diagnostics for C and C++ (all targets).
+  add_compile_options(-fstack-protector-strong -Wformat -Wformat-security)
+  # libc++ bounds/validity assertions. "Fast" mode keeps only low-overhead checks
+  # (hot-path bounds and valid-input), suitable for release builds. Requires a
+  # recent libc++ (LLVM 18+ / current Xcode); silently ignored by older libc++.
+  add_compile_definitions($<$<COMPILE_LANGUAGE:CXX>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST>)
+  # Fortified libc calls; _FORTIFY_SOURCE needs optimization, so skip Debug (-O0).
+  add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>)
+endif()
+
 # Avoid conflicts with Luxrender, and other plug-ins that may use the same
 # libraries as Blender with a different version or build options.
 set(PLATFORM_SYMBOLS_MAP ${CMAKE_SOURCE_DIR}/source/creator/symbols_apple.map)
@@ -488,9 +506,9 @@ if(PLATFORM_BUNDLED_LIBRARIES)
   list(JOIN PLATFORM_BUNDLED_LIBRARY_DIRS ":" _library_paths)
   # Intentionally double "$$" which expands into "$" when instantiated.
   set(PLATFORM_ENV_BUILD "DYLD_LIBRARY_PATH=\"${_library_paths}:$$DYLD_LIBRARY_PATH\"")
-  set(PLATFORM_ENV_INSTALL "DYLD_LIBRARY_PATH=${CMAKE_INSTALL_PREFIX_WITH_CONFIG}/Blender.app/Contents/Resources/lib/:$$DYLD_LIBRARY_PATH")
+  set(PLATFORM_ENV_INSTALL "DYLD_LIBRARY_PATH=${CMAKE_INSTALL_PREFIX_WITH_CONFIG}/Applender.app/Contents/Resources/lib/:$$DYLD_LIBRARY_PATH")
   unset(_library_paths)
 endif()
 
 # Same as `CFBundleIdentifier` in Info.plist.
-set(CMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "org.blenderfoundation.blender")
+set(CMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "org.applender.applender")

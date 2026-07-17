@@ -150,10 +150,6 @@ CCL_NAMESPACE_BEGIN
 
 #ifdef WITH_OSL
 #  define __OSL__
-#  ifdef __KERNEL_OPTIX__
-/* Kernels with OSL support are built separately in OptiX and don't need SVM. */
-#    undef __SVM__
-#  endif
 #endif
 #ifndef __KERNEL_GPU__
 #  if defined(WITH_PATH_GUIDING)

@@ -176,7 +176,7 @@ class TestEnvironment:
         if platform.system() == "Windows":
             return pathlib.Path('blender.exe')
         elif platform.system() == "Darwin":
-            return pathlib.Path('Blender.app') / 'Contents' / 'MacOS' / 'Blender'
+            return pathlib.Path('Applender.app') / 'Contents' / 'MacOS' / 'Applender'
         else:
             return pathlib.Path('blender')
 

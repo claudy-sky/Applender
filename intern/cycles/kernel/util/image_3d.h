@@ -9,7 +9,7 @@
 
 #include "util/types_image.h"
 
-#if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
+#if !defined(__KERNEL_METAL__)
 #  ifdef WITH_NANOVDB
 #    include "kernel/util/nanovdb.h"
 #  endif
@@ -118,37 +118,6 @@ ccl_device OutT kernel_image_interp_trilinear_nanovdb(ccl_private Acc &acc, cons
 template<typename OutT, typename Acc>
 ccl_device OutT kernel_image_interp_tricubic_nanovdb(ccl_private Acc &acc, const float3 P)
 {
-#  if defined(__KERNEL_HIP__)
-  /* Explicitly unroll for HIP compiler to unroll the loop. Without this the render result is wrong
-   * on a specific platform/compiler combinations. ALso don't rely on the `unroll` hint as it has
-   * a performance impact. See #152126 and discussion/benchmark in !152321. */
-
-  const float3 floor_P = floor(P);
-  const float3 t = P - floor_P;
-  const int3 index = make_int3(floor_P);
-
-  const int xc[4] = {index.x - 1, index.x, index.x + 1, index.x + 2};
-  const int yc[4] = {index.y - 1, index.y, index.y + 1, index.y + 2};
-  const int zc[4] = {index.z - 1, index.z, index.z + 1, index.z + 2};
-
-  float3 weight[4];
-  fill_cubic_weights(weight, t);
-
-#    define DATA(x, y, z) (OutT(acc.getValue(make_int3(xc[x], yc[y], zc[z]))))
-#    define COL_TERM(col, row) \
-      (weight[col].y * (weight[0].x * DATA(0, col, row) + weight[1].x * DATA(1, col, row) + \
-                        weight[2].x * DATA(2, col, row) + weight[3].x * DATA(3, col, row)))
-#    define ROW_TERM(row) \
-      (weight[row].z * (COL_TERM(0, row) + COL_TERM(1, row) + COL_TERM(2, row) + COL_TERM(3, row)))
-
-  /* Actual interpolation. */
-  return ROW_TERM(0) + ROW_TERM(1) + ROW_TERM(2) + ROW_TERM(3);
-
-#    undef COL_TERM
-#    undef ROW_TERM
-#    undef DATA
-
-#  else
 
   const float3 floor_P = floor(P);
   const float3 t = P - floor_P;
@@ -171,7 +140,6 @@ ccl_device OutT kernel_image_interp_tricubic_nanovdb(ccl_private Acc &acc, const
   }
 
   return result;
-#  endif
 }
 
 template<typename OutT, typename T>

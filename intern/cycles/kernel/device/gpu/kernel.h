@@ -15,8 +15,6 @@
 
 #ifdef __KERNEL_METAL__
 #  include "kernel/device/metal/context_begin.h"
-#elif defined(__KERNEL_ONEAPI__)
-#  include "kernel/device/oneapi/context_begin.h"
 #endif
 
 #include "kernel/device/gpu/work_stealing.h"
@@ -47,8 +45,6 @@
 
 #ifdef __KERNEL_METAL__
 #  include "kernel/device/metal/context_end.h"
-#elif defined(__KERNEL_ONEAPI__)
-#  include "kernel/device/oneapi/context_end.h"
 #endif
 
 #include "kernel/film/read.h"
@@ -147,13 +143,9 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 }
 ccl_gpu_kernel_postfix
 
-#if !defined(__KERNEL_HIPRT__)
 
 /* Intersection kernels need access to the kernel handler for specialization constants to work
  * properly. */
-#  ifdef __KERNEL_ONEAPI__
-#    include "kernel/device/oneapi/context_intersect_begin.h"
-#  endif
 
 ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_intersect_closest,
@@ -244,11 +236,7 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 }
 ccl_gpu_kernel_postfix
 
-#  ifdef __KERNEL_ONEAPI__
-#    include "kernel/device/oneapi/context_intersect_end.h"
-#  endif
 
-#endif
 
 ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_shade_background,
@@ -329,13 +317,9 @@ ccl_gpu_kernel_postfix
 constant int __dummy_constant [[function_constant(Kernel_DummyConstant)]];
 #endif
 
-#if !defined(__KERNEL_HIPRT__)
 
 /* Kernels using intersections need access to the kernel handler for specialization constants to
  * work properly. */
-#  ifdef __KERNEL_ONEAPI__
-#    include "kernel/device/oneapi/context_intersect_begin.h"
-#  endif
 
 ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_shade_surface_raytrace,
@@ -361,11 +345,7 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 }
 ccl_gpu_kernel_postfix
 
-#  ifdef __KERNEL_ONEAPI__
-#    include "kernel/device/oneapi/context_intersect_end.h"
-#  endif
 
-#endif
 
 ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_shade_volume,
@@ -511,16 +491,6 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORTED_INDEX_DEFAULT_BLOCK_SIZE)
 ccl_gpu_kernel_postfix
 
 /* oneAPI Verizon needs the local_mem accessor in the arguments. */
-#ifdef __KERNEL_ONEAPI__
-ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
-    ccl_gpu_kernel_signature(integrator_sort_bucket_pass,
-                             const int num_states,
-                             const int partition_size,
-                             const int num_states_limit,
-                             ccl_global int *indices,
-                             const int kernel_index,
-                             sycl::local_accessor<int> &local_mem)
-#else
 ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
     ccl_gpu_kernel_signature(integrator_sort_bucket_pass,
                              const int num_states,
@@ -528,7 +498,6 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
                              const int num_states_limit,
                              ccl_global int *indices,
                              const int kernel_index)
-#endif
 {
 #if defined(__KERNEL_LOCAL_ATOMIC_SORT__)
   ccl_global ushort *d_queued_kernel = (ccl_global ushort *)
@@ -542,18 +511,6 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
   int max_shaders = context.launch_params_metal.data.max_shaders;
 #  endif
 
-#  ifdef __KERNEL_ONEAPI__
-  /* Metal backend doesn't have these particular ccl_gpu_* defines and current kernel code
-   * uses metal_*, we need the below to be compatible with these kernels. */
-  int max_shaders = ((ONEAPIKernelContext *)kg)->__data->max_shaders;
-  int metal_local_id = ccl_gpu_thread_idx_x;
-  int metal_local_size = ccl_gpu_block_dim_x;
-  int metal_grid_id = ccl_gpu_block_idx_x;
-  /* There is no difference here between different access decorations, as we are requesting
-   * a raw pointer immediately, so the simplest decoration option is used (no decoration). */
-  ccl_gpu_shared int *threadgroup_array =
-      local_mem.get_multi_ptr<sycl::access::decorated::no>().get();
-#  endif
 
   gpu_parallel_sort_bucket_pass(num_states,
                                 partition_size,
@@ -571,16 +528,6 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
 ccl_gpu_kernel_postfix
 
 /* oneAPI version needs the local_mem accessor in the arguments. */
-#ifdef __KERNEL_ONEAPI__
-ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
-    ccl_gpu_kernel_signature(integrator_sort_write_pass,
-                             const int num_states,
-                             const int partition_size,
-                             const int num_states_limit,
-                             ccl_global int *indices,
-                             const int kernel_index,
-                             sycl::local_accessor<int> &local_mem)
-#else
 ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
     ccl_gpu_kernel_signature(integrator_sort_write_pass,
                              const int num_states,
@@ -588,7 +535,6 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
                              const int num_states_limit,
                              ccl_global int *indices,
                              const int kernel_index)
-#endif
 
 {
 #if defined(__KERNEL_LOCAL_ATOMIC_SORT__)
@@ -603,18 +549,6 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORT_BLOCK_SIZE)
   int max_shaders = context.launch_params_metal.data.max_shaders;
 #  endif
 
-#  ifdef __KERNEL_ONEAPI__
-  /* Metal backend doesn't have these particular ccl_gpu_* defines and current kernel code
-   * uses metal_*, we need the below to be compatible with these kernels. */
-  int max_shaders = ((ONEAPIKernelContext *)kg)->__data->max_shaders;
-  int metal_local_id = ccl_gpu_thread_idx_x;
-  int metal_local_size = ccl_gpu_block_dim_x;
-  int metal_grid_id = ccl_gpu_block_idx_x;
-  /* There is no difference here between different access decorations, as we are requesting
-   * a raw pointer immediately, so the simplest decoration option is used (no decoration). */
-  ccl_gpu_shared int *threadgroup_array =
-      local_mem.get_multi_ptr<sycl::access::decorated::no>().get();
-#  endif
 
   gpu_parallel_sort_write_pass(num_states,
                                partition_size,
@@ -737,14 +671,7 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
         nullptr, render_buffer, sx + x, sy + y, threshold, reset, offset, stride));
   }
 
-#ifdef __KERNEL_ONEAPI__
-  const sycl::nd_item<1> &item_id = sycl::ext::oneapi::this_work_item::get_nd_item<1>();
-  const uint num_active_pixels_in_warp = sycl::inclusive_scan_over_group(
-      item_id.get_sub_group(), static_cast<uint>(!converged), std::plus<>());
-  if (lane_id == item_id.get_sub_group().get_local_range()[0] - 1) {
-    atomic_fetch_and_add_uint32(num_active_pixels, num_active_pixels_in_warp);
-  }
-#elif defined(__KERNEL_METAL__)
+#if   defined(__KERNEL_METAL__)
   /* No divergent return precedes this point: `converged` starts true and is only ever
    * reassigned (never an early-out) inside `if (x < sw && y < sh)` above, so every lane of the
    * simdgroup reaches simd_sum() together, matching the uniformity ccl_gpu_ballot() below
@@ -830,16 +757,8 @@ ccl_device_inline void kernel_gpu_film_convert_half_write(ccl_global uchar4 *rgb
                                                           const half4 half_pixel)
 {
   /* Work around HIP issue with half float display, see #92972. */
-#ifdef __KERNEL_HIP__
-  ccl_global half *out = ((ccl_global half *)rgba) + (rgba_offset + y * rgba_stride + x) * 4;
-  out[0] = half_pixel.x;
-  out[1] = half_pixel.y;
-  out[2] = half_pixel.z;
-  out[3] = half_pixel.w;
-#else
   ccl_global half4 *out = ((ccl_global half4 *)rgba) + rgba_offset + y * rgba_stride + x;
   *out = half_pixel;
-#endif
 }
 
 #ifdef __KERNEL_METAL__
@@ -1313,14 +1232,7 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     can_split = ccl_gpu_kernel_call(kernel_shadow_catcher_path_can_split(state));
   }
 
-#ifdef __KERNEL_ONEAPI__
-  const sycl::nd_item<1> &item_id = sycl::ext::oneapi::this_work_item::get_nd_item<1>();
-  const uint num_possible_splits_in_warp = sycl::inclusive_scan_over_group(
-      item_id.get_sub_group(), static_cast<uint>(can_split), std::plus<>());
-  if (lane_id == item_id.get_sub_group().get_local_range()[0] - 1) {
-    atomic_fetch_and_add_uint32(num_possible_splits, num_possible_splits_in_warp);
-  }
-#elif defined(__KERNEL_METAL__)
+#if   defined(__KERNEL_METAL__)
   /* No divergent return precedes this point: `can_split` starts false and is only ever
    * reassigned (never an early-out) inside `if (state < num_states)` above, so every lane of
    * the simdgroup reaches simd_sum() together, matching the uniformity ccl_gpu_ballot() below

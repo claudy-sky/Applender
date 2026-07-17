@@ -19,11 +19,7 @@ CCL_NAMESPACE_BEGIN
 
 #ifdef __SHADER_RAYTRACE__
 
-#  ifdef __KERNEL_OPTIX__
-extern "C" __device__ float __direct_callable__svm_node_ao(
-#  else
 ccl_device float svm_ao(
-#  endif
     KernelGlobals kg,
     ConstIntegratorState state,
     ccl_private ShaderData *sd,
@@ -96,11 +92,7 @@ ccl_device float svm_ao(
 }
 
 template<uint node_feature_mask, typename ConstIntegratorGenericState>
-#  if defined(__KERNEL_OPTIX__)
-ccl_device_inline
-#  else
 ccl_device_noinline
-#  endif
     void
     svm_node_ao(KernelGlobals kg,
                 ConstIntegratorGenericState state,
@@ -116,11 +108,7 @@ ccl_device_noinline
     float3 normal = stack_load_float3_default(stack, node.normal_offset, sd->N);
     normal = safe_normalize(normal);
 
-#  ifdef __KERNEL_OPTIX__
-    ao = optixDirectCall<float>(0, kg, state, sd, normal, dist, node.samples, node.flags);
-#  else
     ao = svm_ao(kg, state, sd, normal, dist, node.samples, node.flags);
-#  endif
   }
 
   if (stack_valid(node.out_ao_offset)) {

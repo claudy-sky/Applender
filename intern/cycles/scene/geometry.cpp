@@ -163,12 +163,8 @@ int Geometry::motion_step(const float time) const
 
 bool Geometry::need_build_bvh(BVHLayout layout) const
 {
-  return is_instanced() || layout == BVH_LAYOUT_OPTIX || layout == BVH_LAYOUT_MULTI_OPTIX ||
-         layout == BVH_LAYOUT_METAL || layout == BVH_LAYOUT_MULTI_OPTIX_EMBREE ||
-         layout == BVH_LAYOUT_MULTI_METAL || layout == BVH_LAYOUT_MULTI_METAL_EMBREE ||
-         layout == BVH_LAYOUT_HIPRT || layout == BVH_LAYOUT_MULTI_HIPRT ||
-         layout == BVH_LAYOUT_MULTI_HIPRT_EMBREE || layout == BVH_LAYOUT_EMBREEGPU ||
-         layout == BVH_LAYOUT_MULTI_EMBREEGPU || layout == BVH_LAYOUT_MULTI_EMBREEGPU_EMBREE;
+  return is_instanced() || layout == BVH_LAYOUT_METAL || layout == BVH_LAYOUT_MULTI_METAL ||
+         layout == BVH_LAYOUT_MULTI_METAL_EMBREE;
 }
 
 bool Geometry::is_instanced() const
@@ -411,15 +407,12 @@ void GeometryManager::geom_calc_offset(Scene *scene, BVHLayout bvh_layout)
     }
 
     if (prim_offset_changed) {
-      /* Need to rebuild BVH in OptiX, since refit only allows modified mesh data.
-       * Metal has optimization for static BVH, that also require a rebuild. */
-      const bool need_update_rebuild = (bvh_layout == BVH_LAYOUT_OPTIX ||
-                                        bvh_layout == BVH_LAYOUT_MULTI_OPTIX ||
-                                        bvh_layout == BVH_LAYOUT_MULTI_OPTIX_EMBREE) ||
-                                       ((bvh_layout == BVH_LAYOUT_METAL ||
-                                         bvh_layout == BVH_LAYOUT_MULTI_METAL ||
-                                         bvh_layout == BVH_LAYOUT_MULTI_METAL_EMBREE) &&
-                                        scene->params.bvh_type == BVH_TYPE_STATIC);
+      /* Metal has an optimization for static BVH that also requires a rebuild
+       * when the primitive offset changes. */
+      const bool need_update_rebuild = (bvh_layout == BVH_LAYOUT_METAL ||
+                                        bvh_layout == BVH_LAYOUT_MULTI_METAL ||
+                                        bvh_layout == BVH_LAYOUT_MULTI_METAL_EMBREE) &&
+                                       scene->params.bvh_type == BVH_TYPE_STATIC;
       geom->need_update_rebuild |= need_update_rebuild;
       geom->need_update_bvh_for_offset = true;
     }

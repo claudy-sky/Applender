@@ -10,13 +10,8 @@
 #include <embree4/rtcore_ray.h>
 #include <embree4/rtcore_scene.h>
 
-#ifdef __KERNEL_ONEAPI__
-#  include "kernel/device/oneapi/compat.h"
-#  include "kernel/device/oneapi/globals.h"
-#else
 #  include "kernel/device/cpu/compat.h"
 #  include "kernel/device/cpu/globals.h"
-#endif
 
 #include "kernel/bvh/intersect_filter.h"
 #include "kernel/bvh/types.h"
@@ -28,11 +23,7 @@
 
 CCL_NAMESPACE_BEGIN
 
-#ifdef __KERNEL_ONEAPI__
-using numhit_t = uint16_t;
-#else
 using numhit_t = uint32_t;
-#endif
 
 /* Before Embree 4.4, the so-called Traversable functionality was exposed through Scene API.
  * So, in order to simplify code between different versions, we are defining the traversable class
@@ -44,17 +35,12 @@ using numhit_t = uint32_t;
 #  define rtcTraversableOccluded1 rtcOccluded1
 #endif
 
-#ifdef __KERNEL_ONEAPI__
-#  define CYCLES_EMBREE_USED_FEATURES \
-    (kernel_handler.get_specialization_constant<oneapi_embree_features>())
-#else
 #  define CYCLES_EMBREE_USED_FEATURES \
     (RTCFeatureFlags)(RTC_FEATURE_FLAG_TRIANGLE | RTC_FEATURE_FLAG_INSTANCE | \
                       RTC_FEATURE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS | RTC_FEATURE_FLAG_POINT | \
                       RTC_FEATURE_FLAG_MOTION_BLUR | RTC_FEATURE_FLAG_ROUND_CATMULL_ROM_CURVE | \
                       RTC_FEATURE_FLAG_FLAT_CATMULL_ROM_CURVE | \
                       RTC_FEATURE_FLAG_ROUND_LINEAR_CURVE)
-#endif
 
 #define EMBREE_IS_HAIR(x) (x & 1)
 
@@ -67,11 +53,7 @@ struct CCLFirstHitContext : public RTCRayQueryContext {
 };
 
 struct CCLShadowContext : public RTCRayQueryContext {
-#if defined(__KERNEL_ONEAPI__)
-  ONEAPIKernelContext *oneapi_kernel_context;
-#else
   KernelGlobals kg;
-#endif
 
   BVHShadowAllPayload *payload;
 };
@@ -223,11 +205,7 @@ ccl_device_forceinline void kernel_embree_filter_intersection_func_impl(
 
   RTCHit *hit = (RTCHit *)args->hit;
   CCLFirstHitContext *ctx = (CCLFirstHitContext *)(args->context);
-#ifdef __KERNEL_ONEAPI__
-  KernelGlobalsGPU *kg = nullptr;
-#else
   const ThreadKernelGlobalsCPU *kg = ctx->kg;
-#endif
   const Ray *cray = ctx->ray;
 
   if (kernel_embree_is_self_intersection(
@@ -262,11 +240,7 @@ ccl_device_forceinline void kernel_embree_filter_occluded_shadow_all_func_impl(
   CCLShadowContext *ctx = (CCLShadowContext *)(args->context);
   BVHShadowAllPayload &payload = *ctx->payload;
 
-#ifdef __KERNEL_ONEAPI__
-  KernelGlobalsGPU *kg = nullptr;
-#else
   const ThreadKernelGlobalsCPU *kg = ctx->kg;
-#endif
 
   Intersection isect;
   kernel_embree_convert_hit(
@@ -290,11 +264,7 @@ ccl_device_forceinline void kernel_embree_filter_occluded_local_func_impl(
   const RTCRay *ray = (RTCRay *)args->ray;
   RTCHit *hit = (RTCHit *)args->hit;
   CCLLocalContext *ctx = (CCLLocalContext *)(args->context);
-#ifdef __KERNEL_ONEAPI__
-  KernelGlobalsGPU *kg = nullptr;
-#else
   const ThreadKernelGlobalsCPU *kg = ctx->kg;
-#endif
   const Ray *cray = ctx->ray;
 
   /* Check if it's hitting the correct object. */
@@ -389,11 +359,7 @@ ccl_device_forceinline void kernel_embree_filter_occluded_volume_all_func_impl(
   const RTCRay *ray = (RTCRay *)args->ray;
   RTCHit *hit = (RTCHit *)args->hit;
   CCLVolumeContext *ctx = (CCLVolumeContext *)(args->context);
-#ifdef __KERNEL_ONEAPI__
-  KernelGlobalsGPU *kg = nullptr;
-#else
   const ThreadKernelGlobalsCPU *kg = ctx->kg;
-#endif
   const Ray *cray = ctx->ray;
 
 #ifdef __VOLUME_RECORD_ALL__
@@ -421,60 +387,12 @@ ccl_device_forceinline void kernel_embree_filter_occluded_volume_all_func_impl(
 #endif
 }
 
-#ifdef __KERNEL_ONEAPI__
-/* Static wrappers so we can call the callbacks from out side the ONEAPIKernelContext class */
-RTC_SYCL_INDIRECTLY_CALLABLE static void ccl_always_inline
-kernel_embree_filter_intersection_func_static(const RTCFilterFunctionNArguments *args)
-{
-  RTCHit *hit = (RTCHit *)args->hit;
-  CCLFirstHitContext *ctx = (CCLFirstHitContext *)(args->context);
-  ONEAPIKernelContext *context = static_cast<ONEAPIKernelContext *>(ctx->kg);
-  context->kernel_embree_filter_intersection_func_impl(args);
-}
-
-RTC_SYCL_INDIRECTLY_CALLABLE static void ccl_always_inline
-kernel_embree_filter_occluded_shadow_all_func_static(const RTCFilterFunctionNArguments *args)
-{
-  RTCHit *hit = (RTCHit *)args->hit;
-  CCLShadowContext *ctx = (CCLShadowContext *)(args->context);
-  ONEAPIKernelContext *context = ctx->oneapi_kernel_context;
-  context->kernel_embree_filter_occluded_shadow_all_func_impl(args);
-}
-
-RTC_SYCL_INDIRECTLY_CALLABLE static void ccl_always_inline
-kernel_embree_filter_occluded_local_func_static(const RTCFilterFunctionNArguments *args)
-{
-  RTCHit *hit = (RTCHit *)args->hit;
-  CCLLocalContext *ctx = (CCLLocalContext *)(args->context);
-  ONEAPIKernelContext *context = static_cast<ONEAPIKernelContext *>(ctx->kg);
-  context->kernel_embree_filter_occluded_local_func_impl(args);
-}
-
-RTC_SYCL_INDIRECTLY_CALLABLE static void ccl_always_inline
-kernel_embree_filter_occluded_volume_all_func_static(const RTCFilterFunctionNArguments *args)
-{
-  RTCHit *hit = (RTCHit *)args->hit;
-  CCLVolumeContext *ctx = (CCLVolumeContext *)(args->context);
-  ONEAPIKernelContext *context = static_cast<ONEAPIKernelContext *>(ctx->kg);
-  context->kernel_embree_filter_occluded_volume_all_func_impl(args);
-}
-
-#  define kernel_embree_filter_intersection_func \
-    ONEAPIKernelContext::kernel_embree_filter_intersection_func_static
-#  define kernel_embree_filter_occluded_shadow_all_func \
-    ONEAPIKernelContext::kernel_embree_filter_occluded_shadow_all_func_static
-#  define kernel_embree_filter_occluded_local_func \
-    ONEAPIKernelContext::kernel_embree_filter_occluded_local_func_static
-#  define kernel_embree_filter_occluded_volume_all_func \
-    ONEAPIKernelContext::kernel_embree_filter_occluded_volume_all_func_static
-#else
 #  define kernel_embree_filter_intersection_func kernel_embree_filter_intersection_func_impl
 #  define kernel_embree_filter_occluded_shadow_all_func \
     kernel_embree_filter_occluded_shadow_all_func_impl
 #  define kernel_embree_filter_occluded_local_func kernel_embree_filter_occluded_local_func_impl
 #  define kernel_embree_filter_occluded_volume_all_func \
     kernel_embree_filter_occluded_volume_all_func_impl
-#endif
 
 /* Scene intersection. */
 
@@ -486,15 +404,7 @@ ccl_device_intersect bool kernel_embree_intersect(KernelGlobals kg,
   isect->t = ray->tmax;
   CCLFirstHitContext ctx;
   rtcInitRayQueryContext(&ctx);
-#ifdef __KERNEL_ONEAPI__
-  /* NOTE(sirgienko): Cycles GPU back-ends passes nullptr to KernelGlobals and
-   * uses global device allocation (CUDA, Optix, HIP) or passes all needed data
-   * as a class context (Metal, oneAPI). So we need to pass this context here
-   * in order to have an access to it later in Embree filter functions on GPU. */
-  ctx.kg = (KernelGlobals)this;
-#else
   ctx.kg = kg;
-#endif
 
   RTCRayHit ray_hit;
   ctx.ray = ray;
@@ -528,15 +438,7 @@ ccl_device_intersect bool kernel_embree_intersect_local(KernelGlobals kg,
                          SD_OBJECT_TRANSFORM_APPLIED);
   CCLLocalContext ctx;
   rtcInitRayQueryContext(&ctx);
-#  ifdef __KERNEL_ONEAPI__
-  /* NOTE(sirgienko): Cycles GPU back-ends passes nullptr to KernelGlobals and
-   * uses global device allocation (CUDA, Optix, HIP) or passes all needed data
-   * as a class context (Metal, oneAPI). So we need to pass this context here
-   * in order to have an access to it later in Embree filter functions on GPU. */
-  ctx.kg = (KernelGlobals)this;
-#  else
   ctx.kg = kg;
-#  endif
   ctx.is_sss = has_bvh;
   ctx.lcg_state = lcg_state;
   ctx.max_hits = max_hits;
@@ -597,11 +499,7 @@ ccl_device_intersect void kernel_embree_intersect_shadow_all(KernelGlobals kg,
 {
   CCLShadowContext ctx;
   rtcInitRayQueryContext(&ctx);
-#  if defined(__KERNEL_ONEAPI__)
-  ctx.oneapi_kernel_context = this;
-#  else
   ctx.kg = kg;
-#  endif
   ctx.payload = &payload;
 
   RTCRay rtc_ray;
@@ -629,15 +527,7 @@ ccl_device_intersect uint kernel_embree_intersect_volume(KernelGlobals kg,
 {
   CCLVolumeContext ctx;
   rtcInitRayQueryContext(&ctx);
-#  ifdef __KERNEL_ONEAPI__
-  /* NOTE(sirgienko) Cycles GPU back-ends passes nullptr to KernelGlobals and
-   * uses global device allocation (CUDA, Optix, HIP) or passes all needed data
-   * as a class context (Metal, oneAPI). So we need to pass this context here
-   * in order to have an access to it later in Embree filter functions on GPU. */
-  ctx.kg = (KernelGlobals)this;
-#  else
   ctx.kg = kg;
-#  endif
   ctx.vol_isect = isect;
 #  ifdef __VOLUME_RECORD_ALL__
   ctx.max_hits = numhit_t(max_hits);

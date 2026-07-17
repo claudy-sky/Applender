@@ -92,15 +92,10 @@ CCL_NAMESPACE_BEGIN
 /* Scalar */
 
 
-#if !defined(__KERNEL_GPU__) || defined(__KERNEL_ONEAPI__)
-#  ifndef __KERNEL_ONEAPI__
+#if !defined(__KERNEL_GPU__)
 using std::isfinite;
 using std::isnan;
 using std::sqrt;
-#  else
-#    define isfinite(x) sycl::isfinite((x))
-#    define isnan(x) sycl::isnan((x))
-#  endif
 
 ccl_device_inline int abs(const int x)
 {
@@ -210,7 +205,7 @@ ccl_device_template_spec float make_zero()
   return 0.0f;
 }
 
-#if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
+#if !defined(__KERNEL_METAL__)
 /* Int/Float conversion */
 
 ccl_device_inline int as_int(const uint i)
@@ -404,24 +399,9 @@ ccl_device_inline T1 endvalue_preserving_mix(const T1 a, const T1 b, const T2 t)
 #if !defined(__KERNEL_METAL__)
 ccl_device_inline float saturatef(const float a)
 {
-#  ifdef __KERNEL_OPTIX__
-  /* Workaround OptiX driver bug which somehow rounds constant values to
-   * integers when using __saturatef. This particular logic works around the
-   * problem, just using clamp gets optimized back to saturate. See #159954. */
-  if (!(a >= 0.0f)) {
-    return 0.0f;
-  }
-  if (!(a <= 1.0f)) {
-    return 1.0f;
-  }
-  return a;
-#  elif defined(__KERNEL_CUDA__)
-  return __saturatef(a);
-#  else
   return clamp(a, 0.0f, 1.0f);
-#  endif
 }
-#endif /* __KERNEL_CUDA__ */
+#endif /* !defined(__KERNEL_METAL__) */
 
 ccl_device_inline int float_to_int(const float f)
 {
@@ -711,23 +691,14 @@ ccl_device_inline uint popcount(const uint64_t x)
 {
   return std::popcount(x);
 }
-#elif defined(__KERNEL_ONEAPI__)
-#  define popcount(x) sycl::popcount(x)
-#elif defined(__KERNEL_HIP__)
-/* Use popcll to support 64-bit wave for pre-RDNA AMD GPUs */
-#  define popcount(x) __popcll(x)
 #elif !defined(__KERNEL_METAL__)
 #  define popcount(x) __popc(x)
 #endif
 
 ccl_device_inline uint count_leading_zeros(const uint x)
 {
-#if defined(__KERNEL_CUDA__) || defined(__KERNEL_OPTIX__) || defined(__KERNEL_HIP__)
-  return __clz(x);
-#elif defined(__KERNEL_METAL__)
+#if   defined(__KERNEL_METAL__)
   return clz(x);
-#elif defined(__KERNEL_ONEAPI__)
-  return sycl::clz(x);
 #else
   assert(x != 0);
   return __builtin_clz(x);
@@ -736,12 +707,8 @@ ccl_device_inline uint count_leading_zeros(const uint x)
 
 ccl_device_inline uint count_trailing_zeros(const uint x)
 {
-#if defined(__KERNEL_CUDA__) || defined(__KERNEL_OPTIX__) || defined(__KERNEL_HIP__)
-  return (__ffs(x) - 1);
-#elif defined(__KERNEL_METAL__)
+#if   defined(__KERNEL_METAL__)
   return ctz(x);
-#elif defined(__KERNEL_ONEAPI__)
-  return sycl::ctz(x);
 #else
   assert(x != 0);
   return __builtin_ctz(x);
@@ -750,9 +717,7 @@ ccl_device_inline uint count_trailing_zeros(const uint x)
 
 ccl_device_inline uint find_first_set(const uint x)
 {
-#if defined(__KERNEL_CUDA__) || defined(__KERNEL_OPTIX__) || defined(__KERNEL_HIP__)
-  return __ffs(x);
-#elif defined(__KERNEL_METAL__)
+#if   defined(__KERNEL_METAL__)
   return (x != 0) ? ctz(x) + 1 : 0;
 #else
   return __builtin_ffs(x);
@@ -802,9 +767,7 @@ ccl_device_inline uint prev_power_of_two(const uint x)
 ccl_device_inline uint32_t reverse_integer_bits(uint32_t x)
 {
   /* Use a native instruction if it exists. */
-#if defined(__KERNEL_CUDA__)
-  return __brev(x);
-#elif defined(__KERNEL_METAL__)
+#if   defined(__KERNEL_METAL__)
   return reverse_bits(x);
 #elif defined(__aarch64__)
   /* Assume the rbit is always available on 64bit ARM architecture. */

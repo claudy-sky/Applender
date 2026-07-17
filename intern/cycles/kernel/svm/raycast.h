@@ -100,11 +100,7 @@ ccl_device_inline void svm_raycast_attr_eval_and_store(
 }
 
 template<uint node_feature_mask, typename ConstIntegratorGenericState>
-#  if defined(__KERNEL_OPTIX__)
-ccl_device_inline
-#  else
 ccl_device_noinline
-#  endif
     int
     svm_node_raycast(KernelGlobals kg,
                      ConstIntegratorGenericState state,

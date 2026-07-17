@@ -25,6 +25,7 @@ _modules = [
     "grease_pencil",
     "image",
     "image_as_planes",
+    "mcp",
     "mesh",
     "node",
     "object",
@@ -64,6 +65,7 @@ def register():
     from . import (
         bone_selection_sets,
         copy_global_transform,
+        mcp,
     )
 
     for mod in _modules_loaded:
@@ -73,6 +75,7 @@ def register():
     bone_selection_sets.register()
     copy_global_transform.register()
     project.register()
+    mcp.register()
 
 
 def unregister():
@@ -80,11 +83,13 @@ def unregister():
     from . import (
         bone_selection_sets,
         copy_global_transform,
+        mcp,
     )
 
     bone_selection_sets.unregister()
     copy_global_transform.unregister()
     project.unregister()
+    mcp.unregister()
 
     for mod in reversed(_modules_loaded):
         for cls in reversed(mod.classes):

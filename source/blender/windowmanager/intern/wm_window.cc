@@ -610,7 +610,7 @@ static std::string wm_window_title_text(
     if (is_single && area && area->spacetype != SPACE_EMPTY) {
       return IFACE_(ED_area_name(area).c_str());
     }
-    return "Blender";
+    return "Applender";
   }
 
   /* This path may contain invalid UTF8 byte sequences on UNIX systems,
@@ -693,7 +693,7 @@ static std::string wm_window_title_text(
     }
   }
 
-  win_title.append(fmt::format(" - Blender {}", BKE_blender_version_string()));
+  win_title.append(fmt::format(" - Applender {}", BKE_blender_version_string()));
 
   return win_title;
 }

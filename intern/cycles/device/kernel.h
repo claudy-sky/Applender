@@ -4,14 +4,12 @@
 
 #pragma once
 
-#ifndef __KERNEL_ONEAPI__
 #  include "kernel/types.h"
 
 #  include "util/string.h"
 
 #  include <bitset>
 #  include <iosfwd>
-#endif
 
 CCL_NAMESPACE_BEGIN
 
@@ -23,7 +21,6 @@ bool device_kernel_has_gpu_function(DeviceKernel kernel);
 
 const char *device_kernel_as_string(DeviceKernel kernel);
 
-#ifndef __KERNEL_ONEAPI__
 std::ostream &operator<<(std::ostream &os, DeviceKernel kernel);
 
 /* DeviceKernelMask */
@@ -33,6 +30,5 @@ struct DeviceKernelMask : public std::bitset<DEVICE_KERNEL_NUM> {
 };
 
 string device_kernel_mask_as_string(DeviceKernelMask mask);
-#endif
 
 CCL_NAMESPACE_END

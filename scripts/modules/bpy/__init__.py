@@ -10,6 +10,7 @@ __all__ = (
     "app",
     "context",
     "data",
+    "mcp",
     "msgbus",
     "ops",
     "path",
@@ -28,6 +29,15 @@ from _bpy import (
     props,
     types,
 )
+
+# `mcp` (the native MCP / Model Context Protocol client binding) is only
+# registered on `_bpy` when Blender is built `WITH_MCP` (the CMake option
+# defaults to ON, but the module remains optional). Fall back to `None` so
+# `import bpy` keeps working either way.
+try:
+    from _bpy import mcp
+except ImportError:
+    mcp = None
 
 # python modules
 from . import (
