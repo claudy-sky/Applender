@@ -593,6 +593,16 @@ set(MTL_BACKEND_GLSL_SRC
   shaders/gpu_shader_msl_defines.msl
   shaders/gpu_shader_msl_wrapper.msl
   shaders/gpu_shader_compat_msl.msl
+
+  # Hand-written native MSL shader sources (bypass the GLSL->MSL generator, see
+  # ShaderCreateInfo::native_msl_vert_source() / native_msl_frag_source() and
+  # MTLShader::create_shader_library()). The matching GLSL sources above stay registered as the
+  # runtime fallback.
+  metal/kernels/native/gpu_shader_2D_image_overlays_merge_native.msl
+  metal/kernels/native/gpu_shader_cycles_display_fallback_native.msl
+  metal/kernels/native/gpu_shader_icon_native.msl
+  metal/kernels/native/gpu_shader_icon_multi_native.msl
+  metal/kernels/native/gpu_shader_sequencer_thumbs_native.msl
 )
 
 set(MSL_SRC

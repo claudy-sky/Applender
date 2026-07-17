@@ -50,6 +50,10 @@ SAMPLER(0, sampler2D, image)
 TYPEDEF_SOURCE("GPU_shader_shared.hh")
 VERTEX_SOURCE("gpu_shader_sequencer_thumbs_vert.glsl")
 FRAGMENT_SOURCE("gpu_shader_sequencer_thumbs_frag.glsl")
+/* Hand-written native MSL, used on Metal unless BLENDER_METAL_NO_NATIVE_MSL is set. See
+ * metal/kernels/native/gpu_shader_sequencer_thumbs_native.msl. */
+NATIVE_MSL_VERT_SOURCE("gpu_shader_sequencer_thumbs_native.msl")
+NATIVE_MSL_FRAG_SOURCE("gpu_shader_sequencer_thumbs_native.msl")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 

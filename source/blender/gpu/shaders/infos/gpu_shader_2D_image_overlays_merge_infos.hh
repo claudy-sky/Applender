@@ -30,6 +30,10 @@ SAMPLER(0, sampler2D, image_texture)
 SAMPLER(1, sampler2D, overlays_texture)
 VERTEX_SOURCE("gpu_shader_2D_image_vert.glsl")
 FRAGMENT_SOURCE("gpu_shader_image_overlays_merge_frag.glsl")
+/* Hand-written native MSL, used on Metal unless BLENDER_METAL_NO_NATIVE_MSL is set. See
+ * metal/kernels/native/gpu_shader_2D_image_overlays_merge_native.msl. */
+NATIVE_MSL_VERT_SOURCE("gpu_shader_2D_image_overlays_merge_native.msl")
+NATIVE_MSL_FRAG_SOURCE("gpu_shader_2D_image_overlays_merge_native.msl")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 
@@ -43,5 +47,9 @@ PUSH_CONSTANT(float2, fullscreen)
 SAMPLER(0, sampler2D, image_texture)
 VERTEX_SOURCE("gpu_shader_display_fallback_vert.glsl")
 FRAGMENT_SOURCE("gpu_shader_display_fallback_frag.glsl")
+/* Hand-written native MSL, used on Metal unless BLENDER_METAL_NO_NATIVE_MSL is set. See
+ * metal/kernels/native/gpu_shader_cycles_display_fallback_native.msl. */
+NATIVE_MSL_VERT_SOURCE("gpu_shader_cycles_display_fallback_native.msl")
+NATIVE_MSL_FRAG_SOURCE("gpu_shader_cycles_display_fallback_native.msl")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()

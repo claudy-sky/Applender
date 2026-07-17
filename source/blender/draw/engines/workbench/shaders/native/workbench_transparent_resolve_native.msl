@@ -1,0 +1,106 @@
+/* SPDX-FileCopyrightText: 2026 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup draw_engine
+ *
+ * Hand-written native MSL implementation of the `workbench_transparent_resolve` shader (Weighted
+ * Blended Order-Independent Transparency resolve pass). Bypasses the GLSL->MSL generator on
+ * Metal; opted-in from `infos/workbench_transparent_resolve_infos.hh` via
+ * `NATIVE_MSL_VERT_SOURCE()` / `NATIVE_MSL_FRAG_SOURCE()`. The GLSL sources
+ * (`workbench_fullscreen_vert.glsl` + `workbench_transparent_resolve_frag.glsl`) remain the
+ * default fallback, used whenever the `BLENDER_METAL_NO_NATIVE_MSL` runtime kill-switch is set
+ * (see `MTLShader::create_shader_library()` in `mtl_shader.mm`).
+ *
+ * `NATIVE_MSL_VERT_SOURCE()` / `NATIVE_MSL_FRAG_SOURCE()` are declared in
+ * `gpu/intern/gpu_shader_create_info.hh`. This is a *draw-engine* create-info
+ * (`draw/engines/workbench/shaders/infos/`), not a `gpu/` one, but `gpu_shader_create_info.hh` is
+ * reachable from here the same way it already is for every other draw-engine create-info: this
+ * file's own `#include "gpu_shader_create_info.hh"` resolves through the `../gpu/intern` entry in
+ * `draw/CMakeLists.txt`'s `GLSL_INC` (shared by all `engines/*/shaders/infos/*.hh`). No adaptation
+ * of the macro or its include chain was needed to opt this create-info in.
+ *
+ * Binding contract (re-derived from `mtl_shader_generate.hh`/`.cc`; must stay numerically in
+ * sync with the create-info in `infos/workbench_transparent_resolve_infos.hh`):
+ *   - No push constants: the create-info declares none, so `MTLPushConstantBuf` is never
+ *     allocated (see `MTLShader::finalize()`) and the GLSL->MSL generator never emits a
+ *     `PushConstantBlock` / `[[buffer(29)]]` parameter for this shader (see the
+ *     "Only generate PushConstantBlock if we have uniforms" comment in `mtl_shader_generate.cc`).
+ *     This native MSL therefore declares no push-constant buffer parameter either.
+ *   - transparent_accum:     [[texture(8)]]  [[sampler(0)]]  (SAMPLER slot 0;
+ *     MTL_SAMPLER_SLOT_OFFSET = MTL_MAX_IMAGE_SLOTS = 8).
+ *   - transparent_revealage: [[texture(9)]]  [[sampler(1)]]  (SAMPLER slot 1).
+ *   - No vertex attributes/buffers: `workbench_fullscreen_vert.glsl` draws a full-screen triangle
+ *     purely from `gl_VertexID` (`[[vertex_id]]`) via `fullscreen_vertex()`
+ *     (`gpu_shader_fullscreen_lib.glsl`), inlined below.
+ *   - No `VERTEX_OUT` interface block: `workbench_transparent_resolve_frag.glsl` reads
+ *     `gl_FragCoord` directly instead of an interpolated UV, so `Varyings` carries only
+ *     `position`. Per `generate_raster_builtins()` in `mtl_shader_generate.cc`, `gl_FragCoord` is
+ *     simply the `[[position]]` field of the fragment's `[[stage_in]]` struct (window-space,
+ *     already Y-flipped consistently with the vertex NDC fixup below) -- `mtl_frag_in.position`
+ *     is used directly in place of `gl_FragCoord` here.
+ *   - Fragment output: frag_color [[color(0)]].
+ *   - Vertex NDC fixup (mtl_shader_generate.cc): flip Y, remap Z from [-1..1] to [0..1]. The GLSL
+ *     source emits `out_position.z = 1.0f`, `w = 1.0f`, so the remap is a no-op numerically
+ *     ((1+1)/2 = 1.0) -- replicated verbatim regardless, to stay in lock-step with the generated
+ *     path for any future edits to the vertex shader.
+ *
+ * MSL discipline (Apple-recommended half-precision color math): the final RGB divide-by-weight
+ * and alpha computation (McGuire & Bavoil weighted-blended OIT resolve, Listing 4) is done in
+ * `float` to preserve precision through the division by a value clamped down to `1e-4f`; the
+ * result is only narrowed to `half` at the very final output assignment, per the "keep half until
+ * final output" discipline. No `discard` is introduced (the GLSL source has none).
+ */
+
+#pragma once
+
+using namespace metal;
+
+struct Varyings {
+  float4 position [[position]];
+};
+
+vertex Varyings _workbench_transparent_resolve_vert(uint gl_VertexID [[vertex_id]])
+{
+  Varyings out;
+  /* fullscreen_vertex(gl_VertexID, gl_Position) from gpu_shader_fullscreen_lib.glsl. */
+  int v = int(gl_VertexID) % 3;
+  float x = -1.0f + float((v & 1) << 2);
+  float y = -1.0f + float((v & 2) << 1);
+  out.position = float4(x, y, 1.0f, 1.0f);
+  /* Metal NDC fixup, matches the GLSL->MSL generator (mtl_shader_generate.cc). */
+  out.position.y = -out.position.y;
+  out.position.z = (out.position.z + out.position.w) / 2.0f;
+  return out;
+}
+
+struct FragOut {
+  half4 frag_color [[color(0)]];
+};
+
+fragment FragOut _workbench_transparent_resolve_frag(
+    Varyings mtl_frag_in [[stage_in]],
+    texture2d<float, access::sample> transparent_accum [[texture(8)]],
+    sampler transparent_accum_samp_ [[sampler(0)]],
+    texture2d<float, access::sample> transparent_revealage [[texture(9)]],
+    sampler transparent_revealage_samp_ [[sampler(1)]])
+{
+  FragOut out;
+
+  float2 screen_uv = mtl_frag_in.position.xy /
+                     float2(transparent_accum.get_width(), transparent_accum.get_height());
+  /* Revealage is actually stored in transparent_accum alpha channel.
+   * This is a workaround to older hardware not having separate blend equation per render target.
+   */
+  float4 trans_accum = transparent_accum.sample(transparent_accum_samp_, screen_uv);
+  float trans_weight = transparent_revealage.sample(transparent_revealage_samp_, screen_uv).r;
+  float trans_reveal = trans_accum.a;
+
+  /* Listing 4 */
+  float3 resolved_rgb = trans_accum.rgb / clamp(trans_weight, 1e-4f, 5e4f);
+  float resolved_a = 1.0f - trans_reveal;
+
+  out.frag_color = half4(half3(resolved_rgb), half(resolved_a));
+  return out;
+}
