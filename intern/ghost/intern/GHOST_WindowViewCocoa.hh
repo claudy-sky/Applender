@@ -160,7 +160,19 @@
 HANDLE_KEY_EVENT(keyUp)
 HANDLE_KEY_EVENT(flagsChanged)
 
-HANDLE_MOUSE_EVENT(mouseDown)
+- (void)mouseDown:(NSEvent *)event
+{
+  /* Opt-in kill switch: trackpad Force Touch pressure is unverified on real hardware, see
+   * BLENDER_TRACKPAD_FORCE_TOUCH / GHOST_SystemCocoa::UseTrackpadForceTouchPressure(). */
+  if (GHOST_SystemCocoa::UseTrackpadForceTouchPressure()) {
+    NSPressureConfiguration *pressureConfig = [[NSPressureConfiguration alloc]
+        initWithPressureBehavior:NSPressureBehaviorPrimaryGeneric];
+    [pressureConfig set];
+  }
+
+  system_cocoa_->handleMouseEvent(event);
+}
+
 HANDLE_MOUSE_EVENT(mouseUp)
 HANDLE_MOUSE_EVENT(rightMouseDown)
 HANDLE_MOUSE_EVENT(rightMouseUp)
@@ -177,6 +189,15 @@ HANDLE_MOUSE_EVENT(rotateWithEvent)
 
 HANDLE_TABLET_EVENT(tabletPoint)
 HANDLE_TABLET_EVENT(tabletProximity)
+
+/* Trackpad Force Touch pressure, opt-in only (see mouseDown above).
+ * No-op when the kill switch is disabled, so non-opted-in behavior is unchanged. */
+- (void)pressureChangeWithEvent:(NSEvent *)event
+{
+  if (GHOST_SystemCocoa::UseTrackpadForceTouchPressure()) {
+    system_cocoa_->handlePressureEvent(event);
+  }
+}
 
 - (BOOL)isOpaque
 {

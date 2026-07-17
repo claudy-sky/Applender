@@ -294,6 +294,23 @@ class GHOST_SystemCocoa : public GHOST_System {
   bool handleTabletEvent(void *eventPtr);
 
   /**
+   * Handles a trackpad Force Touch pressure-change event, feeding it into the same
+   * per-window #GHOST_TabletData used by real tablets/styluses.
+   * Only takes effect when trackpad Force Touch pressure is enabled, see
+   * #UseTrackpadForceTouchPressure.
+   * \param eventPtr: An #NSEvent pointer (cast to `void *` to enable compilation in standard
+   * C++).
+   */
+  void handlePressureEvent(void *eventPtr);
+
+  /**
+   * Whether trackpad Force Touch pressure should be reported as tablet pressure.
+   * Opt-in kill switch, disabled by default. Enable by setting the
+   * BLENDER_TRACKPAD_FORCE_TOUCH environment variable (to any value).
+   */
+  static bool UseTrackpadForceTouchPressure();
+
+  /**
    * Handles a mouse event.
    * \param eventPtr: An #NSEvent pointer (cast to `void *` to enable compilation in standard C++).
    * \return Indication whether the event was handled.

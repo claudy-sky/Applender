@@ -210,7 +210,11 @@ enum GHOST_TCapabilityFlag {
 enum GHOST_TTabletMode {
   GHOST_kTabletModeNone = 0,
   GHOST_kTabletModeStylus,
-  GHOST_kTabletModeEraser
+  GHOST_kTabletModeEraser,
+  /* Pressure derived from a Force Touch trackpad (not a real tablet/stylus).
+   * Kept distinct from GHOST_kTabletModeStylus so a genuine stylus is never confused
+   * with trackpad-derived pressure. Opt-in only, see BLENDER_TRACKPAD_FORCE_TOUCH. */
+  GHOST_kTabletModeForceTouch,
 };
 
 enum GHOST_TTabletAPI {
