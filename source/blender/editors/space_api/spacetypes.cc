@@ -25,6 +25,9 @@
 #include "ED_anim_api.hh"
 #include "ED_armature.hh"
 #include "ED_asset.hh"
+#ifdef WITH_OCCT
+#  include "ED_cad.hh"
+#endif
 #include "ED_clip.hh"
 #include "ED_curve.hh"
 #include "ED_curves.hh"
@@ -101,6 +104,9 @@ void ED_spacetypes_init()
   object::operatortypes_object();
   ED_operatortypes_lattice();
   ED_operatortypes_mesh();
+#ifdef WITH_OCCT
+  ED_operatortypes_cad();
+#endif
   geometry::operatortypes_geometry();
   sculpt_paint::operatortypes_sculpt();
   ED_operatortypes_sculpt_curves();
