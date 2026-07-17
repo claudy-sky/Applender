@@ -241,51 +241,89 @@ static ::MTLCompileOptions *get_compile_options(const bool use_subpass_input,
   return options;
 }
 
+/* Kill-switch: BLENDER_METAL_NO_NATIVE_MSL forces every shader stage through the normal
+ * GLSL->MSL generator path, even when a hand-written native MSL source has been registered via
+ * `ShaderCreateInfo::native_msl_vert_source()` / `native_msl_frag_source()`. This is the pure
+ * runtime A/B toggle between the generated and native MSL code paths: the opt-in metadata is
+ * still present on the create-info either way, only its effect is disabled. Checked once and
+ * cached, matching the `BLENDER_METAL_FORCE_CLEAR` pattern in mtl_framebuffer.mm. */
+static bool native_msl_disabled()
+{
+  static const bool disabled = (getenv("BLENDER_METAL_NO_NATIVE_MSL") != nullptr);
+  return disabled;
+}
+
 id<MTLLibrary> MTLShader::create_shader_library(const shader::ShaderCreateInfo &info,
                                                 const ShaderStage stage,
                                                 MutableSpan<StringRefNull> sources)
 {
-  std::pair<std::string, std::string> wrapper = generate_entry_point(
-      info, stage, entry_point_name_get(stage));
-
-  std::string shader_compat;
-  {
-    std::stringstream ss;
-    /* Shader stage needs to be defined before the compat part. */
-    ss << shader_stage_define(stage) << "\n";
-    ss << "#define MTL_WORKGROUP_SIZE_X " << info.compute_layout_.local_size_x << "\n";
-    ss << "#define MTL_WORKGROUP_SIZE_Y " << info.compute_layout_.local_size_y << "\n";
-    ss << "#define MTL_WORKGROUP_SIZE_Z " << info.compute_layout_.local_size_z << "\n";
-    if (flag_is_set(info.builtins_, BuiltinBits::USE_SAMPLER_ARG_BUFFER)) {
-      ss << "#define MTL_USE_SAMPLER_ARGUMENT_BUFFER\n";
-    }
-
-    if (flag_is_set(info.builtins_, BuiltinBits::TEXTURE_ATOMIC) &&
-        MTLBackend::get_capabilities().supports_texture_atomics)
-    {
-      ss << "#define MTL_SUPPORTS_TEXTURE_ATOMICS 1\n";
-    }
-
-    shader::GeneratedSource defines_src{"gpu_shader_msl_defines.msl", {}, ss.str()};
-    shader::GeneratedSource wrapper_src{
-        "gpu_shader_msl_wrapper.msl", {"gpu_shader_msl_types.msl"}, wrapper.first};
-    shader::GeneratedSourceList generated_sources{defines_src, wrapper_src};
-
-    /* Concatenate common source. */
-    Vector<StringRefNull> compatibility_src = gpu_shader_dependency_get_resolved_source(
-        "gpu_shader_compat_msl.msl", generated_sources);
-    shader_compat = fmt::to_string(fmt::join(compatibility_src, ""));
+  /* Selected shaders can opt a given stage into a hand-written native MSL source file, bypassing
+   * the GLSL->MSL generator (entry-point wrapping, MSL compat shim, and preprocessor) entirely.
+   * The GLSL source remains registered as the default fallback: it is used whenever no native
+   * source was registered for this stage, or when the BLENDER_METAL_NO_NATIVE_MSL kill-switch is
+   * set (see `native_msl_disabled()` above). */
+  StringRefNull native_msl_source_name;
+  if (stage == ShaderStage::VERTEX) {
+    native_msl_source_name = info.native_msl_vert_source_;
   }
+  else if (stage == ShaderStage::FRAGMENT) {
+    native_msl_source_name = info.native_msl_frag_source_;
+  }
+  const bool use_native_msl = !native_msl_source_name.is_empty() && !native_msl_disabled();
 
-  sources[SOURCES_INDEX_VERSION] = shader_compat;
+  std::string original_source;
 
-  const std::string original_source = fmt::to_string(fmt::join(sources, "")) + wrapper.second;
+  if (use_native_msl) {
+    /* Hand-written source is compiled as-is: no entry-point wrapper, no MSL compat shim. It is
+     * still resolved through the regular shader dependency system (so it may `#include` other
+     * registered `.msl` files), matching how `gpu_shader_compat_msl.msl` is fetched below. */
+    Vector<StringRefNull> native_src = gpu_shader_dependency_get_resolved_source(
+        native_msl_source_name, {});
+    original_source = fmt::to_string(fmt::join(native_src, ""));
+  }
+  else {
+    std::pair<std::string, std::string> wrapper = generate_entry_point(
+        info, stage, entry_point_name_get(stage));
+
+    std::string shader_compat;
+    {
+      std::stringstream ss;
+      /* Shader stage needs to be defined before the compat part. */
+      ss << shader_stage_define(stage) << "\n";
+      ss << "#define MTL_WORKGROUP_SIZE_X " << info.compute_layout_.local_size_x << "\n";
+      ss << "#define MTL_WORKGROUP_SIZE_Y " << info.compute_layout_.local_size_y << "\n";
+      ss << "#define MTL_WORKGROUP_SIZE_Z " << info.compute_layout_.local_size_z << "\n";
+      if (flag_is_set(info.builtins_, BuiltinBits::USE_SAMPLER_ARG_BUFFER)) {
+        ss << "#define MTL_USE_SAMPLER_ARGUMENT_BUFFER\n";
+      }
+
+      if (flag_is_set(info.builtins_, BuiltinBits::TEXTURE_ATOMIC) &&
+          MTLBackend::get_capabilities().supports_texture_atomics)
+      {
+        ss << "#define MTL_SUPPORTS_TEXTURE_ATOMICS 1\n";
+      }
+
+      shader::GeneratedSource defines_src{"gpu_shader_msl_defines.msl", {}, ss.str()};
+      shader::GeneratedSource wrapper_src{
+          "gpu_shader_msl_wrapper.msl", {"gpu_shader_msl_types.msl"}, wrapper.first};
+      shader::GeneratedSourceList generated_sources{defines_src, wrapper_src};
+
+      /* Concatenate common source. */
+      Vector<StringRefNull> compatibility_src = gpu_shader_dependency_get_resolved_source(
+          "gpu_shader_compat_msl.msl", generated_sources);
+      shader_compat = fmt::to_string(fmt::join(compatibility_src, ""));
+    }
+
+    sources[SOURCES_INDEX_VERSION] = shader_compat;
+
+    original_source = fmt::to_string(fmt::join(sources, "")) + wrapper.second;
+  }
 
   dump_source_to_disk(
       this->name_get(), this->entry_point_name_get(stage), ".msl", original_source);
 
   std::string processed_source;
-  if (!this->skip_preprocessor) {
+  if (!use_native_msl && !this->skip_preprocessor) {
     processed_source = run_preprocessor(original_source, G.debug & G_DEBUG_GPU_SHADER_NO_DCE);
 
     dump_source_to_disk(this->name_get(),
@@ -294,6 +332,8 @@ id<MTLLibrary> MTLShader::create_shader_library(const shader::ShaderCreateInfo &
                         processed_source);
   }
   else {
+    /* Native MSL is compiled as-is (never run through the preprocessor), same as when the
+     * shader's own `skip_preprocessor` flag is set. */
     processed_source = original_source;
   }
 

@@ -1,0 +1,82 @@
+/* SPDX-FileCopyrightText: 2026 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup gpu
+ *
+ * Hand-written native MSL implementation of the `gpu_shader_cycles_display_fallback` shader
+ * (Cycles display driver fallback, prompt-named "gpu_shader_display_fallback" -- the create-info
+ * actually declared in `infos/gpu_shader_2D_image_overlays_merge_infos.hh` is named
+ * `gpu_shader_cycles_display_fallback`). Bypasses the GLSL->MSL generator on Metal; opted-in via
+ * `NATIVE_MSL_VERT_SOURCE()` / `NATIVE_MSL_FRAG_SOURCE()`. The GLSL sources
+ * (`gpu_shader_display_fallback_vert.glsl` + `gpu_shader_display_fallback_frag.glsl`) remain the
+ * default fallback, used whenever `BLENDER_METAL_NO_NATIVE_MSL` is set (see
+ * `MTLShader::create_shader_library()` in `mtl_shader.mm`).
+ *
+ * Binding contract (re-derived from `mtl_shader_generate.hh`/`.cc`; must stay numerically in
+ * sync with `infos/gpu_shader_2D_image_overlays_merge_infos.hh`):
+ *   - Push-constant buffer: [[buffer(29)]] (MTL_PUSH_CONSTANT_BUFFER_SLOT). Single member
+ *     `fullscreen` (float2), matching create-info order.
+ *   - image_texture: [[texture(8)]] [[sampler(0)]] (SAMPLER slot 0; MTL_SAMPLER_SLOT_OFFSET = 8).
+ *   - Vertex attributes: pos [[attribute(0)]], texCoord [[attribute(1)]].
+ *   - Fragment output: fragColor [[color(0)]].
+ *   - Vertex NDC fixup (mtl_shader_generate.cc): flip Y, remap Z from [-1..1] to [0..1]. Note the
+ *     GLSL vertex shader already emits gl_Position.z = 0 explicitly, so the Z remap below is a
+ *     no-op ((0+1)/2 = 0.5... actually remaps to 0.5) -- replicated faithfully regardless, to stay
+ *     numerically identical to the generated path for any future edits to this vertex shader.
+ *
+ * The varying struct (`Varyings`) is owned entirely by this file and shared verbatim between the
+ * vertex and fragment entry points below.
+ *
+ * MSL discipline (Apple-recommended half-precision color math): the fragment shader is a direct
+ * passthrough sample, so color math is trivially done in half4. UVs and the clip-space position
+ * stay float. No `discard` is introduced (the GLSL source has none).
+ */
+
+#pragma once
+
+using namespace metal;
+
+struct PushConstantBlock {
+  float2 fullscreen;
+};
+
+struct VertexIn {
+  float2 pos [[attribute(0)]];
+  float2 texCoord [[attribute(1)]];
+};
+
+struct Varyings {
+  float4 position [[position]];
+  float2 texCoord_interp [[center_perspective]];
+};
+
+vertex Varyings _gpu_shader_cycles_display_fallback_vert(
+    VertexIn mtl_vert_in [[stage_in]],
+    constant PushConstantBlock &mtl_pc [[buffer(29)]])
+{
+  Varyings out;
+  /* normalize_coordinates() from gpu_shader_display_fallback_vert.glsl. */
+  float2 ndc = (float2(2.0f) * (mtl_vert_in.pos / mtl_pc.fullscreen)) - float2(1.0f);
+  out.position = float4(ndc, 0.0f, 1.0f);
+  /* Metal NDC fixup, matches the GLSL->MSL generator (mtl_shader_generate.cc). */
+  out.position.y = -out.position.y;
+  out.position.z = (out.position.z + out.position.w) / 2.0f;
+  out.texCoord_interp = mtl_vert_in.texCoord;
+  return out;
+}
+
+struct FragOut {
+  half4 fragColor [[color(0)]];
+};
+
+fragment FragOut _gpu_shader_cycles_display_fallback_frag(
+    Varyings mtl_frag_in [[stage_in]],
+    texture2d<float, access::sample> image_texture [[texture(8)]],
+    sampler image_texture_samp_ [[sampler(0)]])
+{
+  FragOut out;
+  out.fragColor = half4(image_texture.sample(image_texture_samp_, mtl_frag_in.texCoord_interp));
+  return out;
+}

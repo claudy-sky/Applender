@@ -214,6 +214,11 @@ namespace blender {
 #  define MTL_MAX_TOTAL_THREADS_PER_THREADGROUP(value) \
     .mtl_max_total_threads_per_threadgroup(value)
 
+/* Opt a stage into a hand-written native MSL source file, bypassing the GLSL->MSL generator on
+ * Metal. See `ShaderCreateInfo::native_msl_vert_source()` / `native_msl_frag_source()`. */
+#  define NATIVE_MSL_VERT_SOURCE(filename) .native_msl_vert_source(filename)
+#  define NATIVE_MSL_FRAG_SOURCE(filename) .native_msl_frag_source(filename)
+
 #else
 
 #  define _read const
@@ -316,6 +321,9 @@ namespace blender {
 #  define TYPEDEF_SOURCE(filename)
 
 #  define MTL_MAX_TOTAL_THREADS_PER_THREADGROUP(value)
+
+#  define NATIVE_MSL_VERT_SOURCE(filename)
+#  define NATIVE_MSL_FRAG_SOURCE(filename)
 #endif
 
 #define _INFO_EXPAND2(a, b) ADDITIONAL_INFO(a) ADDITIONAL_INFO(b)
@@ -1118,6 +1126,15 @@ struct ShaderCreateInfo {
   /* API-specific parameters. */
 #  ifdef WITH_METAL_BACKEND
   ushort mtl_max_threads_per_threadgroup_ = 0;
+  /**
+   * Optional hand-written native MSL source for the vertex/fragment stage, opted-in through
+   * `native_msl_vert_source()` / `native_msl_frag_source()` below. Empty means "use the regular
+   * GLSL->MSL generated path" (the default). Resolved by filename through the same shader
+   * dependency mechanism as `vertex_source_` / `fragment_source_`, but the referenced file must
+   * be registered as a Metal-only source (see `MTL_BACKEND_GLSL_SRC` in `gpu/CMakeLists.txt`).
+   * See `MTLShader::create_shader_library()` and its `BLENDER_METAL_NO_NATIVE_MSL` kill-switch.
+   */
+  StringRefNull native_msl_vert_source_, native_msl_frag_source_;
 #  endif
 
  public:
@@ -1585,6 +1602,37 @@ struct ShaderCreateInfo {
     mtl_max_threads_per_threadgroup_ = max_total_threads_per_threadgroup;
 #  else
     UNUSED_VARS(max_total_threads_per_threadgroup);
+#  endif
+    return *static_cast<Self *>(this);
+  }
+
+  /**
+   * \name native_msl_vert_source / native_msl_frag_source
+   * Opt the vertex/fragment stage into a hand-written native MSL source file that bypasses the
+   * GLSL->MSL generator (entry-point wrapping, MSL compat shim, preprocessor). \a filename must
+   * be registered like other Metal-only `.msl` sources (see `MTL_BACKEND_GLSL_SRC` in
+   * `gpu/CMakeLists.txt`); it is resolved by filename through the same shader dependency
+   * mechanism as `vertex_source()` / `fragment_source()`. The GLSL source given to
+   * `vertex_source()` / `fragment_source()` remains the fallback: it is used whenever this is
+   * left unset, and can also be forced back on at runtime via the `BLENDER_METAL_NO_NATIVE_MSL`
+   * kill-switch. No-op on non-Metal backends.
+   */
+  Self &native_msl_vert_source(StringRefNull filename)
+  {
+#  ifdef WITH_METAL_BACKEND
+    native_msl_vert_source_ = filename;
+#  else
+    UNUSED_VARS(filename);
+#  endif
+    return *static_cast<Self *>(this);
+  }
+
+  Self &native_msl_frag_source(StringRefNull filename)
+  {
+#  ifdef WITH_METAL_BACKEND
+    native_msl_frag_source_ = filename;
+#  else
+    UNUSED_VARS(filename);
 #  endif
     return *static_cast<Self *>(this);
   }

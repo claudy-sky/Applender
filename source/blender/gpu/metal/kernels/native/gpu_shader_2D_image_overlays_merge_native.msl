@@ -1,0 +1,118 @@
+/* SPDX-FileCopyrightText: 2026 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup gpu
+ *
+ * Hand-written native MSL implementation of the `gpu_shader_2D_image_overlays_merge` shader.
+ * Bypasses the GLSL->MSL generator (entry-point wrapping, MSL compat shim, preprocessor) on
+ * Metal; opted-in from `infos/gpu_shader_2D_image_overlays_merge_infos.hh` via
+ * `NATIVE_MSL_VERT_SOURCE()` / `NATIVE_MSL_FRAG_SOURCE()`. The GLSL sources
+ * (`gpu_shader_2D_image_vert.glsl` + `gpu_shader_image_overlays_merge_frag.glsl`) remain the
+ * default fallback: they are used whenever the `BLENDER_METAL_NO_NATIVE_MSL` runtime
+ * kill-switch is set (see `MTLShader::create_shader_library()` in `mtl_shader.mm`).
+ *
+ * Binding contract (re-derived from `mtl_shader_generate.hh`/`.cc`; must stay numerically in
+ * sync with the create-info in `infos/gpu_shader_2D_image_overlays_merge_infos.hh`):
+ *   - Push-constant buffer: [[buffer(29)]]  (MTL_PUSH_CONSTANT_BUFFER_SLOT = MTL_MAX_SSBO(16) +
+ *     MTL_MAX_UBO(13)). Members declared in the exact create-info order
+ *     (ModelViewProjectionMatrix, display_transform, overlay, use_hdr_display); `bool` push
+ *     constants are stored as 4-byte `int`, matching `generate_uniforms()`.
+ *   - image_texture:    [[texture(8)]]  [[sampler(0)]]  (SAMPLER slot 0; MTL_SAMPLER_SLOT_OFFSET
+ *     = MTL_MAX_IMAGE_SLOTS = 8).
+ *   - overlays_texture: [[texture(9)]]  [[sampler(1)]]  (SAMPLER slot 1).
+ *   - Vertex attributes: pos [[attribute(0)]], texCoord [[attribute(1)]].
+ *   - Fragment output: fragColor [[color(0)]].
+ *   - Vertex NDC fixup (mtl_shader_generate.cc): flip Y, remap Z from [-1..1] to [0..1].
+ *
+ * The varying struct (`Varyings`) is owned entirely by this file: it is shared verbatim between
+ * the vertex and fragment entry points below, so no explicit `[[user(locn)]]` is required.
+ *
+ * MSL discipline (Apple-recommended half-precision color math): color math (sampling,
+ * overlay blend, sRGB transform) is done in half/half4. UVs and the clip-space position stay
+ * float. No `discard` is introduced (the GLSL source has none, preserving HSR).
+ */
+
+#pragma once
+
+using namespace metal;
+
+struct PushConstantBlock {
+  float4x4 ModelViewProjectionMatrix;
+  int display_transform;
+  int overlay;
+  int use_hdr_display;
+};
+
+struct VertexIn {
+  float2 pos [[attribute(0)]];
+  float2 texCoord [[attribute(1)]];
+};
+
+struct Varyings {
+  float4 position [[position]];
+  float2 texCoord_interp [[center_perspective]];
+};
+
+vertex Varyings _gpu_shader_2D_image_overlays_merge_vert(
+    VertexIn mtl_vert_in [[stage_in]],
+    constant PushConstantBlock &mtl_pc [[buffer(29)]])
+{
+  Varyings out;
+  out.position = mtl_pc.ModelViewProjectionMatrix * float4(mtl_vert_in.pos.xy, 0.0f, 1.0f);
+  /* Metal NDC fixup, matches the GLSL->MSL generator (mtl_shader_generate.cc). */
+  out.position.y = -out.position.y;
+  out.position.z = (out.position.z + out.position.w) / 2.0f;
+  out.texCoord_interp = mtl_vert_in.texCoord;
+  return out;
+}
+
+struct FragOut {
+  half4 fragColor [[color(0)]];
+};
+
+/* half-precision port of `linearrgb_to_srgb()` from gpu_shader_image_overlays_merge_frag.glsl. */
+static half linearrgb_to_srgb(half c)
+{
+  if (c < 0.0031308h) {
+    return (c < 0.0h) ? 0.0h : c * 12.92h;
+  }
+  return 1.055h * pow(c, half(1.0f / 2.4f)) - 0.055h;
+}
+
+fragment FragOut _gpu_shader_2D_image_overlays_merge_frag(
+    Varyings mtl_frag_in [[stage_in]],
+    constant PushConstantBlock &mtl_pc [[buffer(29)]],
+    texture2d<float, access::sample> image_texture [[texture(8)]],
+    sampler image_texture_samp_ [[sampler(0)]],
+    texture2d<float, access::sample> overlays_texture [[texture(9)]],
+    sampler overlays_texture_samp_ [[sampler(1)]])
+{
+  FragOut out;
+
+  half4 frag_color = half4(image_texture.sample(image_texture_samp_, mtl_frag_in.texCoord_interp));
+  half4 overlay_col = half4(
+      overlays_texture.sample(overlays_texture_samp_, mtl_frag_in.texCoord_interp));
+
+  if (mtl_pc.overlay != 0) {
+    if (mtl_pc.use_hdr_display != 0) {
+      /* When using HDR, interpolate towards clamped color to improve display of
+       * alpha-blended overlays. */
+      frag_color = mix(frag_color, clamp(frag_color, half4(0.0h), half4(1.0h)), overlay_col.a);
+    }
+    frag_color *= 1.0h - overlay_col.a;
+    frag_color += overlay_col;
+  }
+
+  if (mtl_pc.display_transform != 0) {
+    /* Alpha is left untouched, matching the GLSL `linearrgb_to_srgb(float4, float4&)`
+     * overload which only writes `.rgb` and copies `.a` through unchanged. */
+    frag_color.r = linearrgb_to_srgb(frag_color.r);
+    frag_color.g = linearrgb_to_srgb(frag_color.g);
+    frag_color.b = linearrgb_to_srgb(frag_color.b);
+  }
+
+  out.fragColor = frag_color;
+  return out;
+}
