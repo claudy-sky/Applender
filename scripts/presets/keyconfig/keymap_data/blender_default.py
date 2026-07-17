@@ -7798,6 +7798,16 @@ def km_3d_view_tool_interactive_add(params):
     )
 
 
+def km_3d_view_tool_cad_extrude(_params):
+    return (
+        "3D View Tool: Object, CAD Extrude",
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("cad.extrude", {"type": 'LEFTMOUSE', "value": 'PRESS'}, None),
+        ]},
+    )
+
+
 # ------------------------------------------------------------------------------
 # Tool System (3D View, Edit Mesh)
 
@@ -9200,6 +9210,7 @@ def generate_keymaps(params=None):
         km_3d_view_tool_bend(params),
         km_3d_view_tool_measure(params),
         km_3d_view_tool_interactive_add(params),
+        km_3d_view_tool_cad_extrude(params),
         km_3d_view_tool_pose_breakdowner(params),
         km_3d_view_tool_pose_push(params),
         km_3d_view_tool_pose_relax(params),

@@ -2470,6 +2470,19 @@ class VIEW3D_MT_mesh_add(Menu):
         layout.template_node_operator_asset_menu_items(catalog_path="Add")
 
 
+class VIEW3D_MT_cad_add(Menu):
+    bl_idname = "VIEW3D_MT_cad_add"
+    bl_label = "CAD"
+    bl_options = {'SEARCH_ON_KEY_PRESS'}
+
+    def draw(self, _context):
+        layout = self.layout
+
+        layout.operator_context = 'INVOKE_REGION_WIN'
+
+        layout.operator("cad.extrude", text="Rectangle Profile", icon='MESH_PLANE')
+
+
 class VIEW3D_MT_curve_add(Menu):
     bl_idname = "VIEW3D_MT_curve_add"
     bl_label = "Curve"
@@ -2725,6 +2738,9 @@ class VIEW3D_MT_add(Menu):
 
         # layout.operator_menu_enum("object.mesh_add", "type", text="Mesh", icon='OUTLINER_OB_MESH')
         layout.menu("VIEW3D_MT_mesh_add", icon='OUTLINER_OB_MESH')
+
+        if bpy.app.build_options.occt:
+            layout.menu("VIEW3D_MT_cad_add", icon='MESH_CUBE', text="CAD")
 
         # layout.operator_menu_enum("object.curve_add", "type", text="Curve", icon='OUTLINER_OB_CURVE')
         layout.menu("VIEW3D_MT_curve_add", icon='OUTLINER_OB_CURVE')
@@ -9282,6 +9298,7 @@ classes = (
     VIEW3D_MT_select_edit_curves,
     VIEW3D_MT_select_sculpt_curves,
     VIEW3D_MT_mesh_add,
+    VIEW3D_MT_cad_add,
     VIEW3D_MT_curve_add,
     VIEW3D_MT_surface_add,
     VIEW3D_MT_edit_metaball_context_menu,

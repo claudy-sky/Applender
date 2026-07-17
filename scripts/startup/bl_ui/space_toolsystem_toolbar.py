@@ -734,6 +734,19 @@ class _defs_view3d_add:
         )
 
 
+class _defs_cad:
+
+    @ToolDef.from_fn
+    def extrude():
+        return dict(
+            idname="builtin.cad_extrude",
+            label="CAD Extrude",
+            icon="ops.mesh.extrude_region_move",
+            widget=None,
+            keymap="3D View Tool: Object, CAD Extrude",
+        )
+
+
 # -----------------------------------------------------------------------------
 # Object Modes (named based on context.mode)
 
@@ -3799,6 +3812,11 @@ class VIEW3D_PT_tools_active(ToolSelectPanelHelper, Panel):
             *_tools_default,
             None,
             _tools_view3d_add,
+            lambda context: (
+                (_defs_cad.extrude,)
+                if bpy.app.build_options.occt
+                else ()
+            ),
             None,
             _tools_pose,
         ],
