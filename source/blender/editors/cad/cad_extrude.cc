@@ -463,7 +463,7 @@ void VIEW3D_GGT_cad_extrude(wmGizmoGroupType *gzgt)
   gzgt->name = "CAD Extrude Widget";
   gzgt->idname = "VIEW3D_GGT_cad_extrude";
 
-  gzgt->flag = WM_GIZMOGROUPTYPE_3D;
+  gzgt->flag = WM_GIZMOGROUPTYPE_3D | WM_GIZMOGROUPTYPE_DRAW_MODAL_EXCLUDE;
 
   gzgt->gzmap_params.spaceid = SPACE_VIEW3D;
   gzgt->gzmap_params.regionid = RGN_TYPE_WINDOW;

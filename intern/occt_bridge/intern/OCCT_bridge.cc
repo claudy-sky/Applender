@@ -66,7 +66,9 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
@@ -331,19 +333,25 @@ OcctShapeHandle chamfer_all_edges(const OcctShapeHandle &shape,
   const TopoDS_Shape &occt_shape = shape.impl()->shape;
   try {
     BRepFilletAPI_MakeChamfer mk(occt_shape);
-    TopTools_IndexedMapOfShape edge_map;
-    TopExp::MapShapes(occt_shape, TopAbs_EDGE, edge_map);
-    if (edge_map.Extent() == 0) {
+    /* Unlike a fillet, a chamfer setback must be measured from a reference
+     * face, so #BRepFilletAPI_MakeChamfer has no single-distance edge-only
+     * `Add` overload -- only `Add(dist, edge, face)`. Build an edge->face
+     * ancestor map and chamfer each edge against its first adjacent face. */
+    TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+    TopExp::MapShapesAndAncestors(occt_shape, TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+    if (edge_face_map.Extent() == 0) {
       set_error(r_error, "Chamfer: shape has no edges");
       return OcctShapeHandle();
     }
-    for (int i = 1; i <= edge_map.Extent(); i++) {
-      /* VERIFY: BRepFilletAPI_MakeChamfer::Add(dist, edge) -- the symmetric
-       * single-distance overload that takes only an edge exists in OCCT 7.8
-       * (it internally picks a relative face). Other overloads take an
-       * explicit face: Add(dist, edge, face) / Add(d1, d2, edge, face). The
-       * bare Add(dist, edge) is the intended v1 call. */
-      mk.Add(double(distance), TopoDS::Edge(edge_map.FindKey(i)));
+    for (int i = 1; i <= edge_face_map.Extent(); i++) {
+      const TopTools_ListOfShape &faces = edge_face_map.FindFromIndex(i);
+      if (faces.IsEmpty()) {
+        /* A dangling edge with no adjacent face cannot be chamfered; skip it. */
+        continue;
+      }
+      const TopoDS_Edge &edge = TopoDS::Edge(edge_face_map.FindKey(i));
+      const TopoDS_Face &face = TopoDS::Face(faces.First());
+      mk.Add(double(distance), edge, face);
     }
     mk.Build();
     if (!mk.IsDone()) {

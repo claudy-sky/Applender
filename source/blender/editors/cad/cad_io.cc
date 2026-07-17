@@ -164,7 +164,7 @@ void CAD_OT_export_step(wmOperatorType *ot)
                                  FILE_SORT_DEFAULT);
 
   /* Only show `.step` files by default. */
-  prop = RNA_def_string(ot->srna, "filter_glob", "*.step", 0, "Extension Filter", "");
+  prop = RNA_def_string(ot->srna, "filter_glob", "*.step;*.stp", 0, "Extension Filter", "");
   RNA_def_property_flag(prop, PROP_HIDDEN);
 }
 
@@ -211,7 +211,7 @@ void CAD_OT_export_iges(wmOperatorType *ot)
                                  FILE_SORT_DEFAULT);
 
   /* Only show `.iges` files by default. */
-  prop = RNA_def_string(ot->srna, "filter_glob", "*.iges", 0, "Extension Filter", "");
+  prop = RNA_def_string(ot->srna, "filter_glob", "*.iges;*.igs", 0, "Extension Filter", "");
   RNA_def_property_flag(prop, PROP_HIDDEN);
 }
 
@@ -297,7 +297,7 @@ void CAD_OT_import_step(wmOperatorType *ot)
                                  FILE_SORT_DEFAULT);
 
   /* Only show `.step` files by default. */
-  prop = RNA_def_string(ot->srna, "filter_glob", "*.step", 0, "Extension Filter", "");
+  prop = RNA_def_string(ot->srna, "filter_glob", "*.step;*.stp", 0, "Extension Filter", "");
   RNA_def_property_flag(prop, PROP_HIDDEN);
 }
 
@@ -329,7 +329,7 @@ void CAD_OT_import_iges(wmOperatorType *ot)
                                  FILE_SORT_DEFAULT);
 
   /* Only show `.iges` files by default. */
-  prop = RNA_def_string(ot->srna, "filter_glob", "*.iges", 0, "Extension Filter", "");
+  prop = RNA_def_string(ot->srna, "filter_glob", "*.iges;*.igs", 0, "Extension Filter", "");
   RNA_def_property_flag(prop, PROP_HIDDEN);
 }
 
