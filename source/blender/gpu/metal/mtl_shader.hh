@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "BLI_set.hh"
 #include "MEM_guardedalloc.h"
 
 #include "GPU_batch.hh"
@@ -20,6 +21,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <thread>
@@ -160,6 +162,21 @@ class MTLShader : public Shader {
   MTLComputePipelineStateCommon compute_pso_common_state_;
   Map<MTLComputePipelineStateDescriptor, MTLComputePipelineStateInstance *> compute_pso_cache_;
 
+  /**
+   * Async specialized-PSO compilation (see #bake_graphic_pipeline_state /
+   * #bake_compute_pipeline_state in mtl_shader.mm). When a specialized variant is requested whose
+   * base (unspecialized) variant is already cached, the specialized bake is dispatched to a
+   * background queue and the base PSO is returned immediately for that draw; the specialized
+   * result is picked up on a later cache lookup once it has finished baking. These sets record
+   * which specialized descriptors currently have an in-flight background bake -- guarded by
+   * `pso_cache_lock_`, like the caches above -- so the same variant is never dispatched twice.
+   * `~MTLShader()` waits on `pso_cache_building_cv_` until both sets are empty before freeing any
+   * Metal resources, guaranteeing a background bake can never touch a partially-destroyed shader.
+   */
+  Set<MTLRenderPipelineStateDescriptor> pso_cache_building_;
+  Set<MTLComputePipelineStateDescriptor> compute_pso_cache_building_;
+  std::condition_variable pso_cache_building_cv_;
+
  public:
   MTLShader(MTLContext *ctx, const char *name);
   ~MTLShader();
@@ -272,6 +289,21 @@ class MTLShader : public Shader {
                                        MutableSpan<StringRefNull> sources);
 
   std::string entry_point_name_get(const ShaderStage stage);
+
+  /* Actual PSO compilation, shared by the synchronous and asynchronous specialized-bake paths of
+   * #bake_graphic_pipeline_state() / #bake_compute_pipeline_state(). Each takes `device`
+   * explicitly (rather than an `MTLContext *`) so that it is safe to call from a background
+   * queue -- see the callers in mtl_shader.mm for the full rationale. The graphic variant also
+   * takes the API descriptor (`desc`) to populate explicitly, rather than reaching for the
+   * shared `pso_descriptor_` member, so a background bake can never race a concurrent
+   * synchronous one for the same shader. */
+  MTLRenderPipelineStateInstance *bake_graphic_pipeline_state_compile(
+      MTLPrimitiveTopologyClass prim_type,
+      const MTLRenderPipelineStateDescriptor &pipeline_descriptor,
+      id<MTLDevice> device,
+      ::MTLRenderPipelineDescriptor *desc);
+  MTLComputePipelineStateInstance *bake_compute_pipeline_state_compile(
+      const MTLComputePipelineStateDescriptor &compute_pipeline_descriptor, id<MTLDevice> device);
 
   MEM_CXX_CLASS_ALLOC_FUNCS("MTLShader");
 };

@@ -219,9 +219,20 @@ MTLContext::MTLContext(GHOST_IWindow *ghost_window, GHOST_IContext *ghost_contex
 #pragma clang diagnostic ignored "-Wobjc-method-access"
   /* Enable increased concurrent shader compiler limit.
    * NOTE: Disable warning for missing method when building on older OS's, as compiled code will
-   * still work correctly when run on a system with the API available. */
+   * still work correctly when run on a system with the API available.
+   * `shouldMaximizeConcurrentCompilation` widens how many MTLCompilerService processes/threads
+   * the system is willing to run in parallel for this app (WWDC23 "Target and optimize GPU
+   * binaries with Metal 3"). This is independent from `GPU_max_parallel_compilations()` (which
+   * bounds how many PSO bakes Blender itself submits concurrently from its own worker pool) --
+   * the two only interact in that both raise the amount of shader/PSO compilation that can run
+   * in parallel at once.
+   * Kill-switch: `BLENDER_METAL_NO_MAXCONCURRENT=1` disables this opt-in. */
   if (@available(macOS 13.3, *)) {
-    [this->device setShouldMaximizeConcurrentCompilation:YES];
+    static const bool no_maximize_concurrent_compilation =
+        (getenv("BLENDER_METAL_NO_MAXCONCURRENT") != nullptr);
+    if (!no_maximize_concurrent_compilation) {
+      [this->device setShouldMaximizeConcurrentCompilation:YES];
+    }
   }
 #pragma clang diagnostic pop
 
