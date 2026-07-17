@@ -116,6 +116,25 @@ OcctShapeHandle boolean_op(const OcctShapeHandle &a,
                            std::string *r_error);
 
 /**
+ * Round ALL edges of `shape` with a uniform `radius`, returning a new
+ * shape; the operand is not modified. v1 deliberately fillets every edge
+ * (no per-edge selection) to sidestep the topological-naming problem. On
+ * failure -- including a non-positive `radius` -- writes a message to
+ * `r_error` (when non-null) and returns an invalid handle.
+ */
+OcctShapeHandle fillet_all_edges(const OcctShapeHandle &shape, float radius, std::string *r_error);
+
+/**
+ * Chamfer ALL edges of `shape` with a uniform setback `distance`,
+ * returning a new shape; the operand is not modified. On failure --
+ * including a non-positive `distance` -- writes a message to `r_error`
+ * (when non-null) and returns an invalid handle.
+ */
+OcctShapeHandle chamfer_all_edges(const OcctShapeHandle &shape,
+                                  float distance,
+                                  std::string *r_error);
+
+/**
  * Return a transformed copy of `shape`. `m` is a 4x4 matrix in Blender's
  * column-major convention (`m[col][row]`, translation in `m[3][0..2]`).
  * Note: OCCT rigid transforms reject shear and non-uniform scale; such a
@@ -153,5 +172,29 @@ Vector<uint8_t> serialize(const OcctShapeHandle &shape);
  * invalid handle when the blob is empty or malformed.
  */
 OcctShapeHandle deserialize(Span<const uint8_t> blob);
+
+/**
+ * Write `shape` to a STEP file at `path`. Returns false and writes a
+ * message to `r_error` (when non-null) on failure.
+ */
+bool export_step(const OcctShapeHandle &shape, const std::string &path, std::string *r_error);
+
+/**
+ * Write `shape` to an IGES file at `path`. Returns false and writes a
+ * message to `r_error` (when non-null) on failure.
+ */
+bool export_iges(const OcctShapeHandle &shape, const std::string &path, std::string *r_error);
+
+/**
+ * Read the first/root solid from a STEP file at `path`. On failure writes
+ * a message to `r_error` (when non-null) and returns an invalid handle.
+ */
+OcctShapeHandle import_step(const std::string &path, std::string *r_error);
+
+/**
+ * Read the first/root solid from an IGES file at `path`. On failure writes
+ * a message to `r_error` (when non-null) and returns an invalid handle.
+ */
+OcctShapeHandle import_iges(const std::string &path, std::string *r_error);
 
 }  // namespace blender::occt

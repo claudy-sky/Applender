@@ -2872,6 +2872,8 @@ class VIEW3D_MT_object(Menu):
         if bpy.app.build_options.occt:
             layout.separator()
             layout.operator_menu_enum("cad.boolean", "operation", text="CAD Boolean")
+            layout.operator("cad.fillet", text="CAD Fillet")
+            layout.operator("cad.chamfer", text="CAD Chamfer")
 
         layout.separator()
 

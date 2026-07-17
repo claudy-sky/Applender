@@ -47,16 +47,30 @@
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_Tool.hxx>
 #include <BinTools.hxx>
+#include <IFSelect_ReturnStatus.hxx>
+#include <IGESControl_Reader.hxx>
+#include <IGESControl_Writer.hxx>
 #include <Poly_Triangulation.hxx>
+#include <STEPControl_Reader.hxx>
+#include <STEPControl_StepModelType.hxx>
+#include <STEPControl_Writer.hxx>
 #include <Standard_Failure.hxx>
+#include <TopAbs.hxx>
 #include <TopAbs_Orientation.hxx>
+#include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Wire.hxx>
@@ -260,6 +274,102 @@ OcctShapeHandle boolean_op(const OcctShapeHandle &a,
   }
 }
 
+OcctShapeHandle fillet_all_edges(const OcctShapeHandle &shape,
+                                 const float radius,
+                                 std::string *r_error)
+{
+  if (!shape.is_valid()) {
+    set_error(r_error, "Fillet: invalid shape");
+    return OcctShapeHandle();
+  }
+  if (!(radius > 0.0f)) {
+    set_error(r_error, "Fillet: radius must be positive");
+    return OcctShapeHandle();
+  }
+  const TopoDS_Shape &occt_shape = shape.impl()->shape;
+  try {
+    BRepFilletAPI_MakeFillet mk(occt_shape);
+    /* Collect every edge of the shape and add each with a uniform radius.
+     * v1 fillets all edges (no per-edge selection) to sidestep the
+     * topological-naming problem. */
+    TopTools_IndexedMapOfShape edge_map;
+    TopExp::MapShapes(occt_shape, TopAbs_EDGE, edge_map);
+    if (edge_map.Extent() == 0) {
+      set_error(r_error, "Fillet: shape has no edges");
+      return OcctShapeHandle();
+    }
+    for (int i = 1; i <= edge_map.Extent(); i++) {
+      mk.Add(double(radius), TopoDS::Edge(edge_map.FindKey(i)));
+    }
+    mk.Build();
+    if (!mk.IsDone()) {
+      set_error(r_error, "Fillet: build failed");
+      return OcctShapeHandle();
+    }
+    return make_handle(mk.Shape());
+  }
+  catch (const Standard_Failure &err) {
+    set_error(r_error, failure_message(err, "Fillet: OCCT exception"));
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
+    return OcctShapeHandle();
+  }
+}
+
+OcctShapeHandle chamfer_all_edges(const OcctShapeHandle &shape,
+                                  const float distance,
+                                  std::string *r_error)
+{
+  if (!shape.is_valid()) {
+    set_error(r_error, "Chamfer: invalid shape");
+    return OcctShapeHandle();
+  }
+  if (!(distance > 0.0f)) {
+    set_error(r_error, "Chamfer: distance must be positive");
+    return OcctShapeHandle();
+  }
+  const TopoDS_Shape &occt_shape = shape.impl()->shape;
+  try {
+    BRepFilletAPI_MakeChamfer mk(occt_shape);
+    /* Unlike a fillet, a chamfer setback must be measured from a reference
+     * face, so #BRepFilletAPI_MakeChamfer has no single-distance edge-only
+     * `Add` overload -- only `Add(dist, edge, face)`. Build an edge->face
+     * ancestor map and chamfer each edge against its first adjacent face. */
+    TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+    TopExp::MapShapesAndAncestors(occt_shape, TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+    if (edge_face_map.Extent() == 0) {
+      set_error(r_error, "Chamfer: shape has no edges");
+      return OcctShapeHandle();
+    }
+    for (int i = 1; i <= edge_face_map.Extent(); i++) {
+      const TopTools_ListOfShape &faces = edge_face_map.FindFromIndex(i);
+      if (faces.IsEmpty()) {
+        /* A dangling edge with no adjacent face cannot be chamfered; skip it. */
+        continue;
+      }
+      const TopoDS_Edge &edge = TopoDS::Edge(edge_face_map.FindKey(i));
+      const TopoDS_Face &face = TopoDS::Face(faces.First());
+      mk.Add(double(distance), edge, face);
+    }
+    mk.Build();
+    if (!mk.IsDone()) {
+      set_error(r_error, "Chamfer: build failed");
+      return OcctShapeHandle();
+    }
+    return make_handle(mk.Shape());
+  }
+  catch (const Standard_Failure &err) {
+    set_error(r_error, failure_message(err, "Chamfer: OCCT exception"));
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
+    return OcctShapeHandle();
+  }
+}
+
 OcctShapeHandle transformed(const OcctShapeHandle &shape, const float m[4][4])
 {
   if (!shape.is_valid()) {
@@ -450,6 +560,130 @@ OcctShapeHandle deserialize(const Span<const uint8_t> blob)
     return OcctShapeHandle();
   }
   catch (const std::exception &) {
+    return OcctShapeHandle();
+  }
+}
+
+bool export_step(const OcctShapeHandle &shape, const std::string &path, std::string *r_error)
+{
+  if (!shape.is_valid()) {
+    set_error(r_error, "Export STEP: invalid shape");
+    return false;
+  }
+  try {
+    STEPControl_Writer writer;
+    /* `STEPControl_AsIs` writes whatever geometry the shape already is
+     * (solid/shell/etc.) without forcing a target representation. */
+    const IFSelect_ReturnStatus transfer_status = writer.Transfer(shape.impl()->shape,
+                                                                  STEPControl_AsIs);
+    if (transfer_status != IFSelect_RetDone) {
+      set_error(r_error, "Export STEP: transfer failed");
+      return false;
+    }
+    const IFSelect_ReturnStatus write_status = writer.Write(path.c_str());
+    if (write_status != IFSelect_RetDone) {
+      set_error(r_error, "Export STEP: write failed");
+      return false;
+    }
+    return true;
+  }
+  catch (const Standard_Failure &err) {
+    set_error(r_error, failure_message(err, "Export STEP: OCCT exception"));
+    return false;
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
+    return false;
+  }
+}
+
+bool export_iges(const OcctShapeHandle &shape, const std::string &path, std::string *r_error)
+{
+  if (!shape.is_valid()) {
+    set_error(r_error, "Export IGES: invalid shape");
+    return false;
+  }
+  try {
+    /* VERIFY: IGESControl_Writer API differs from STEPControl_Writer. In
+     * OCCT 7.8 the default-constructed writer initializes IGES units/mode
+     * from Interface_Static; `AddShape` returns a Standard_Boolean, and
+     * `ComputeModel()` must be called before `Write()`. */
+    IGESControl_Writer writer;
+    if (!writer.AddShape(shape.impl()->shape)) {
+      set_error(r_error, "Export IGES: AddShape failed");
+      return false;
+    }
+    writer.ComputeModel();
+    /* VERIFY: `IGESControl_Writer::Write(const char *)` returns a
+     * Standard_Boolean (true on success), NOT an IFSelect_ReturnStatus like
+     * the STEP writer. */
+    if (!writer.Write(path.c_str())) {
+      set_error(r_error, "Export IGES: write failed");
+      return false;
+    }
+    return true;
+  }
+  catch (const Standard_Failure &err) {
+    set_error(r_error, failure_message(err, "Export IGES: OCCT exception"));
+    return false;
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
+    return false;
+  }
+}
+
+OcctShapeHandle import_step(const std::string &path, std::string *r_error)
+{
+  try {
+    STEPControl_Reader reader;
+    if (reader.ReadFile(path.c_str()) != IFSelect_RetDone) {
+      set_error(r_error, "Import STEP: could not read file");
+      return OcctShapeHandle();
+    }
+    reader.TransferRoots();
+    /* `OneShape` collapses all transferred roots into a single shape (a
+     * compound when there are several); it may be null when nothing was
+     * transferred. */
+    const TopoDS_Shape occt_shape = reader.OneShape();
+    if (occt_shape.IsNull()) {
+      set_error(r_error, "Import STEP: file contained no shape");
+      return OcctShapeHandle();
+    }
+    return make_handle(occt_shape);
+  }
+  catch (const Standard_Failure &err) {
+    set_error(r_error, failure_message(err, "Import STEP: OCCT exception"));
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
+    return OcctShapeHandle();
+  }
+}
+
+OcctShapeHandle import_iges(const std::string &path, std::string *r_error)
+{
+  try {
+    IGESControl_Reader reader;
+    if (reader.ReadFile(path.c_str()) != IFSelect_RetDone) {
+      set_error(r_error, "Import IGES: could not read file");
+      return OcctShapeHandle();
+    }
+    reader.TransferRoots();
+    const TopoDS_Shape occt_shape = reader.OneShape();
+    if (occt_shape.IsNull()) {
+      set_error(r_error, "Import IGES: file contained no shape");
+      return OcctShapeHandle();
+    }
+    return make_handle(occt_shape);
+  }
+  catch (const Standard_Failure &err) {
+    set_error(r_error, failure_message(err, "Import IGES: OCCT exception"));
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
     return OcctShapeHandle();
   }
 }
