@@ -325,6 +325,39 @@ if(WITH_MANIFOLD)
   find_package(manifold REQUIRED)
 endif()
 
+if(WITH_OCCT)
+  find_package(OpenCASCADE REQUIRED)
+  # NOTE: OCCT's CMake package exports per-toolkit libs (TKernel, TKBRep, TKPrim, TKBO,
+  # TKMesh, TKBinTools, ...) and OpenCASCADE_INCLUDE_DIR/OpenCASCADE_LIBRARIES variables
+  # rather than a single modern imported target -- verify the exact names in the generated
+  # OpenCASCADEConfig.cmake on first on-device build.
+  if(NOT DEFINED OpenCASCADE_INCLUDE_DIR)
+    set(OpenCASCADE_INCLUDE_DIR ${LIBDIR}/occt/include/opencascade)
+  endif()
+  if(NOT DEFINED OpenCASCADE_LIBRARIES)
+    # Some OCCT versions only export per-toolkit imported targets from their package
+    # config without a flat library list. Compose the toolkit set `intern/occt_bridge`
+    # links against, ordered dependents-first for static linking.
+    # TODO(on-device): verify this toolkit set (and that shape serialization's
+    # `BinTools` lives in TKBRep) against the installed OpenCASCADE config on the
+    # first real build.
+    set(OpenCASCADE_LIBRARIES
+      TKBO
+      TKPrim
+      TKMesh
+      TKShHealing
+      TKTopAlgo
+      TKGeomAlgo
+      TKBRep
+      TKGeomBase
+      TKG3d
+      TKG2d
+      TKMath
+      TKernel
+    )
+  endif()
+endif()
+
 if(WITH_RUBBERBAND)
   find_package(Rubberband REQUIRED)
 endif()
