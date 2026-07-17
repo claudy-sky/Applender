@@ -167,6 +167,3 @@ if(WITH_FREESTYLE)
   add_subdirectory(freestyle)
 endif()
 
-if(WITH_CPU_CHECK)
-  add_subdirectory(cpucheck)
-endif()

@@ -292,12 +292,6 @@ if(WITH_PYTHON_MODULE)
 
 else()
   add_executable(blender ${EXETYPE} ${SRC})
-  if(WITH_CPU_CHECK)
-    # blender_cpu_check *NEEDS* to be linked first, there can be no exceptions
-    # to this, this is to ensure this will be the first code to run once the
-    # blender binary has been loaded by the OS.
-    target_link_libraries(blender PRIVATE blender_cpu_check)
-  endif()
 endif()
 
 if(WITH_BUILDINFO)
