@@ -148,10 +148,11 @@ static wmOperatorStatus cad_boolean_exec(bContext *C, wmOperator *op)
 
   /* v1 simplification: the boolean result lives in world space, so the active object's
    * transform is reset to identity instead of transforming the result back into the
-   * active object's local space. */
+   * active object's local space. Pass `use_parent=true` so a parented active object
+   * gets its parenting chain compensated and still ends up at the world origin. */
   float unit[4][4];
   unit_m4(unit);
-  BKE_object_apply_mat4(ob_active, unit, false, false);
+  BKE_object_apply_mat4(ob_active, unit, false, true);
 
   CAD_object_shape_store(ob_active, blob_result);
 

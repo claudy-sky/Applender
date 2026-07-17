@@ -7,6 +7,11 @@
 # site in `CMakeLists.txt`). Because of that the source download is
 # requested here rather than in `download.cmake`, which runs for every
 # dependency unconditionally.
+#
+# `PACKAGE_USE_UPSTREAM_SOURCES` must remain ON (its default) for OCCT:
+# Blender's lib-source mirror does not carry the OCCT tarball, so
+# configuring with `-DPACKAGE_USE_UPSTREAM_SOURCES=OFF` rewrites the URI
+# to the mirror and the download will 404.
 download_source(OCCT)
 
 # NOTE: module names beyond Draw/ApplicationFramework/Visualization/DataExchange

@@ -33,9 +33,13 @@
 
 #include "OCCT_bridge.hh"
 
+#include <cmath>
 #include <cstring>
+#include <exception>
 #include <sstream>
 #include <utility>
+
+#include "BLI_map.hh"
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -165,6 +169,14 @@ OcctShapeHandle make_rect_profile(const float size_x, const float size_y)
   catch (const Standard_Failure &) {
     return OcctShapeHandle();
   }
+  /* Here and below: catch `std::exception` too (e.g. `std::bad_alloc` or
+   * standard-library exceptions escaping OCCT), mapped to the same failure
+   * convention. `Standard_Failure` must stay first: stock OCCT 7.8 derives
+   * it from `Standard_Transient`, not `std::exception`, but the order
+   * matters (and stays correct) for configurations where it does. */
+  catch (const std::exception &) {
+    return OcctShapeHandle();
+  }
 }
 
 OcctShapeHandle extrude_profile(const OcctShapeHandle &profile,
@@ -189,6 +201,10 @@ OcctShapeHandle extrude_profile(const OcctShapeHandle &profile,
   }
   catch (const Standard_Failure &err) {
     set_error(r_error, failure_message(err, "Extrude: OCCT exception"));
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
     return OcctShapeHandle();
   }
 }
@@ -236,6 +252,10 @@ OcctShapeHandle boolean_op(const OcctShapeHandle &a,
   }
   catch (const Standard_Failure &err) {
     set_error(r_error, failure_message(err, "Boolean: OCCT exception"));
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &err) {
+    set_error(r_error, err.what());
     return OcctShapeHandle();
   }
 }
@@ -289,6 +309,9 @@ OcctShapeHandle transformed(const OcctShapeHandle &shape, const float m[4][4])
   catch (const Standard_Failure &) {
     return OcctShapeHandle();
   }
+  catch (const std::exception &) {
+    return OcctShapeHandle();
+  }
 }
 
 TessellatedMesh tessellate(const OcctShapeHandle &shape,
@@ -313,6 +336,23 @@ TessellatedMesh tessellate(const OcctShapeHandle &shape,
     BRepMesh_IncrementalMesh mesher(occt_shape, lin_defl, false, ang_defl, true);
     (void)mesher;
 
+    /* OCCT triangulates each face independently, so nodes along shared
+     * B-rep edges and corners are duplicated per face. Weld them by
+     * quantizing each shape-space position onto a grid and mapping every
+     * quantized position to a single mesh vertex, so the committed mesh is
+     * a connected surface instead of disconnected per-face shells.
+     *
+     * Epsilon choice: coordinates are multiplied by 1e6 and rounded, i.e.
+     * positions are welded on a 1e-6 model-unit grid. That is several
+     * orders of magnitude below any practical linear deflection (see
+     * `lin_defl` above), so only nodes that sample the same B-rep
+     * vertex/edge collapse, while distinct tessellation nodes stay apart. */
+    constexpr double weld_scale = 1e6;
+    Map<VecBase<int64_t, 3>, int> vert_by_position;
+    /* Per-face scratch map from the face's 1-based node index to the
+     * welded mesh vertex index. */
+    Vector<int> node_to_vert;
+
     for (TopExp_Explorer explorer(occt_shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
       const TopoDS_Face &face = TopoDS::Face(explorer.Current());
       TopLoc_Location loc;
@@ -321,18 +361,24 @@ TessellatedMesh tessellate(const OcctShapeHandle &shape,
         continue;
       }
 
-      const int64_t vert_offset = mesh.verts.size();
       const gp_Trsf &trsf = loc.Transformation();
 
       /* OCCT >= 7.6 `Poly_Triangulation` API: `Node(i)` / `Triangle(i)`
        * with 1-based indices (pre-7.6 `Nodes()` array accessors are gone). */
       const int nb_nodes = triangulation->NbNodes();
+      node_to_vert.reinitialize(nb_nodes);
       for (int i = 1; i <= nb_nodes; i++) {
         gp_Pnt point = triangulation->Node(i);
         /* Face triangulations are stored in the face's local frame;
          * transform into shape space by the face location. */
         point.Transform(trsf);
-        mesh.verts.append(float3(float(point.X()), float(point.Y()), float(point.Z())));
+        const VecBase<int64_t, 3> key(int64_t(std::llround(point.X() * weld_scale)),
+                                      int64_t(std::llround(point.Y() * weld_scale)),
+                                      int64_t(std::llround(point.Z() * weld_scale)));
+        node_to_vert[i - 1] = vert_by_position.lookup_or_add_cb(key, [&]() {
+          mesh.verts.append(float3(float(point.X()), float(point.Y()), float(point.Z())));
+          return int(mesh.verts.size() - 1);
+        });
       }
 
       /* A `TopAbs_REVERSED` face uses the reversed surface normal; flip
@@ -346,14 +392,17 @@ TessellatedMesh tessellate(const OcctShapeHandle &shape,
         if (reversed) {
           std::swap(n2, n3);
         }
-        /* Convert to 0-based, offset into the shared vertex array. */
-        mesh.tris.append(int3(int(vert_offset + n1 - 1),
-                              int(vert_offset + n2 - 1),
-                              int(vert_offset + n3 - 1)));
+        /* Remap the 1-based per-face node indices to welded vertices. */
+        mesh.tris.append(
+            int3(node_to_vert[n1 - 1], node_to_vert[n2 - 1], node_to_vert[n3 - 1]));
       }
     }
   }
   catch (const Standard_Failure &) {
+    mesh.verts.clear();
+    mesh.tris.clear();
+  }
+  catch (const std::exception &) {
     mesh.verts.clear();
     mesh.tris.clear();
   }
@@ -378,6 +427,9 @@ Vector<uint8_t> serialize(const OcctShapeHandle &shape)
   catch (const Standard_Failure &) {
     result.clear();
   }
+  catch (const std::exception &) {
+    result.clear();
+  }
   return result;
 }
 
@@ -395,6 +447,9 @@ OcctShapeHandle deserialize(const Span<const uint8_t> blob)
     return make_handle(occt_shape);
   }
   catch (const Standard_Failure &) {
+    return OcctShapeHandle();
+  }
+  catch (const std::exception &) {
     return OcctShapeHandle();
   }
 }

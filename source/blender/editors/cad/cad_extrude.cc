@@ -247,11 +247,13 @@ static wmOperatorStatus cad_extrude_modal(bContext *C, wmOperator *op, const wmE
                                                                1.0f;
       const float distance = float(event->mval[1] - opdata->init_mval[1]) * opdata->pixel_size *
                              sensitivity;
-      RNA_float_set(op->ptr, "distance", distance);
 
-      /* Preview failures (e.g. a zero distance mid-drag) keep the last valid mesh. */
+      /* Preview failures (e.g. a zero distance mid-drag) keep the last valid mesh. Only
+       * commit the property once the preview succeeded, so confirming always re-extrudes
+       * the last successfully previewed distance instead of a rejected one. */
       std::string error;
       if (cad_extrude_preview_update(opdata, distance, &error)) {
+        RNA_float_set(op->ptr, "distance", distance);
         WM_event_add_notifier(C, NC_GEOM | ND_DATA, opdata->object->data);
       }
       cad_extrude_update_status_text(C, distance);

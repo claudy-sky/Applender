@@ -2869,6 +2869,10 @@ class VIEW3D_MT_object(Menu):
         layout.operator("object.duplicate_move_linked")
         layout.operator("object.join")
 
+        if bpy.app.build_options.occt:
+            layout.separator()
+            layout.operator_menu_enum("cad.boolean", "operation", text="CAD Boolean")
+
         layout.separator()
 
         layout.operator("view3d.copybuffer", text="Copy Objects", icon='COPYDOWN')
