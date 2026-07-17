@@ -1100,10 +1100,28 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state_compile(
     /* IMPORTANT: Discard any stale SSBOs or UBOs bindings that could override vertex bindings. */
     pso_inst->used_buf_vert_mask &= ~vbo_bind_mask;
 
-    /* Insert into pso cache. */
+    /* Insert into pso cache. A concurrent bake of the same descriptor can insert first (e.g. a
+     * worker-thread synchronous bake racing a main-thread-dispatched background specialized
+     * bake, which the building-set dedupe does not cover); `Map::add` keeps the existing entry,
+     * so free the losing duplicate's Metal objects (mirroring ~MTLShader) and return the cached
+     * instance instead of leaking. */
     pso_cache_lock_.lock();
     pso_inst->shader_pso_index = pso_cache_.size();
-    pso_cache_.add(pipeline_descriptor, pso_inst);
+    if (!pso_cache_.add(pipeline_descriptor, pso_inst)) {
+      MTLRenderPipelineStateInstance *existing_inst = pso_cache_.lookup(pipeline_descriptor);
+      pso_cache_lock_.unlock();
+      if (pso_inst->pso) {
+        [pso_inst->pso release];
+      }
+      if (pso_inst->vert) {
+        [pso_inst->vert release];
+      }
+      if (pso_inst->frag) {
+        [pso_inst->frag release];
+      }
+      delete pso_inst;
+      return existing_inst;
+    }
     pso_cache_lock_.unlock();
     shader_debug_printf(
         "PSO CACHE: Stored new variant in PSO cache for shader '%s' Hash: '%llu'\n",
@@ -1271,9 +1289,23 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state_compile(
   MTLComputePipelineStateInstance *compute_pso_instance = new MTLComputePipelineStateInstance();
   compute_pso_instance->compute = compute_function;
   compute_pso_instance->pso = pso;
+  /* A concurrent bake of the same descriptor can insert first (see the render-path note); free
+   * the losing duplicate and return the cached instance instead of leaking. */
   pso_cache_lock_.lock();
   compute_pso_instance->shader_pso_index = compute_pso_cache_.size();
-  compute_pso_cache_.add(compute_pipeline_descriptor, compute_pso_instance);
+  if (!compute_pso_cache_.add(compute_pipeline_descriptor, compute_pso_instance)) {
+    MTLComputePipelineStateInstance *existing_inst = compute_pso_cache_.lookup(
+        compute_pipeline_descriptor);
+    pso_cache_lock_.unlock();
+    if (compute_pso_instance->pso) {
+      [compute_pso_instance->pso release];
+    }
+    if (compute_pso_instance->compute) {
+      [compute_pso_instance->compute release];
+    }
+    delete compute_pso_instance;
+    return existing_inst;
+  }
   pso_cache_lock_.unlock();
 
   return compute_pso_instance;
