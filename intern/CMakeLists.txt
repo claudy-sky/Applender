@@ -60,3 +60,7 @@ endif()
 if(WITH_MCP)
   add_subdirectory(mcp)
 endif()
+
+if(WITH_OCCT)
+  add_subdirectory(occt_bridge)
+endif()
