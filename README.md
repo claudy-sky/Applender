@@ -15,7 +15,7 @@ video editing—on top of a **Metal-only** graphics and compute backend.
 Applender is not officially affiliated with, endorsed by, or sponsored by the Blender Foundation.
 "Blender" is a registered trademark of the Blender Foundation.
 
-![Blender screenshot](https://code.blender.org/wp-content/uploads/2018/12/springrg.jpg "Blender screenshot")
+![Applender](doc/images/readme-hero.png "Applender — a fork of Blender for Apple Silicon")
 
 What's different from Blender
 ------------------------------
