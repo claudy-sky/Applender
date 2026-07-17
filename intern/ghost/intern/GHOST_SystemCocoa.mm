@@ -34,6 +34,17 @@
 #include <Carbon/Carbon.h>
 #include <sys/time.h>
 
+/* Trackpad Force Touch pressure as a tablet pressure source is unverified on real hardware,
+ * so it is opt-in only, disabled by default. Enable by setting this environment variable
+ * (to any value) when launching Blender. */
+static const bool use_trackpad_force_touch_pressure = (getenv("BLENDER_TRACKPAD_FORCE_TOUCH") !=
+                                                         nullptr);
+
+bool GHOST_SystemCocoa::UseTrackpadForceTouchPressure()
+{
+  return use_trackpad_force_touch_pressure;
+}
+
 /* --------------------------------------------------------------------
  * Keymaps, mouse converters.
  */
@@ -1493,9 +1504,17 @@ GHOST_TSuccess GHOST_SystemCocoa::handleTabletEvent(void *eventPtr, short eventT
       break;
 
     case NSEventTypeTabletProximity:
-      /* Reset tablet data when device enters proximity or leaves. */
-      ct = GHOST_TABLET_DATA_NONE;
-      if (event.isEnteringProximity) {
+      /* Only fully reset the tablet data when the device is genuinely leaving proximity.
+       * Under high-latency/jittery input (e.g. Sidecar with an iPad+Pencil), a delayed or
+       * out-of-order proximity event could otherwise race with in-flight tablet-point data
+       * and momentarily force Pressure back to GHOST_TABLET_DATA_NONE's 1.0 mid-stroke. An
+       * "entering proximity" event is the start of a new stylus/pencil interaction, so it
+       * should not force a stale full reset. */
+      if (!event.isEnteringProximity) {
+        /* Pointer is leaving tablet area proximity. */
+        ct = GHOST_TABLET_DATA_NONE;
+      }
+      else {
         /* Pointer is entering tablet area proximity. */
         switch (event.pointingDeviceType) {
           case NSPointingDeviceTypePen:
@@ -1518,6 +1537,37 @@ GHOST_TSuccess GHOST_SystemCocoa::handleTabletEvent(void *eventPtr, short eventT
       break;
   }
   return GHOST_kSuccess;
+}
+
+void GHOST_SystemCocoa::handlePressureEvent(void *eventPtr)
+{
+  NSEvent *event = (NSEvent *)eventPtr;
+
+  GHOST_IWindow *window = window_manager_->getWindowAssociatedWithOSWindow(
+      (const void *)event.window);
+  if (!window) {
+    return;
+  }
+
+  GHOST_TabletData &ct = ((GHOST_WindowCocoa *)window)->GetCocoaTabletData();
+
+  /* Clamp to the documented [0.0, 1.0] range of GHOST_TabletData::Pressure. */
+  float pressure = event.pressure;
+  if (pressure < 0.0f) {
+    pressure = 0.0f;
+  }
+  else if (pressure > 1.0f) {
+    pressure = 1.0f;
+  }
+  ct.Pressure = pressure;
+  ct.Xtilt = 0.0f;
+  ct.Ytilt = 0.0f;
+
+  /* Never clobber a genuine stylus already in proximity: trackpad-derived pressure only
+   * takes effect when no real tablet device is active. */
+  if (ct.Active == GHOST_kTabletModeNone) {
+    ct.Active = GHOST_kTabletModeForceTouch;
+  }
 }
 
 bool GHOST_SystemCocoa::handleTabletEvent(void *eventPtr)
