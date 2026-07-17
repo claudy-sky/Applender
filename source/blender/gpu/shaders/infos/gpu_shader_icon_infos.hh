@@ -32,6 +32,10 @@ COMPILATION_CONSTANT(bool, do_corner_masking, true)
 VERTEX_SOURCE("gpu_shader_icon_vert.glsl")
 FRAGMENT_SOURCE("gpu_shader_icon_frag.glsl")
 ADDITIONAL_INFO(gpu_shader_icon_shared)
+/* Hand-written native MSL, used on Metal unless BLENDER_METAL_NO_NATIVE_MSL is set. See
+ * metal/kernels/native/gpu_shader_icon_native.msl. */
+NATIVE_MSL_VERT_SOURCE("gpu_shader_icon_native.msl")
+NATIVE_MSL_FRAG_SOURCE("gpu_shader_icon_native.msl")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 
@@ -43,5 +47,9 @@ TYPEDEF_SOURCE("GPU_shader_shared.hh")
 VERTEX_SOURCE("gpu_shader_icon_multi_vert.glsl")
 FRAGMENT_SOURCE("gpu_shader_icon_frag.glsl")
 ADDITIONAL_INFO(gpu_shader_icon_shared)
+/* Hand-written native MSL, used on Metal unless BLENDER_METAL_NO_NATIVE_MSL is set. See
+ * metal/kernels/native/gpu_shader_icon_multi_native.msl. */
+NATIVE_MSL_VERT_SOURCE("gpu_shader_icon_multi_native.msl")
+NATIVE_MSL_FRAG_SOURCE("gpu_shader_icon_multi_native.msl")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()

@@ -1,0 +1,187 @@
+/* SPDX-FileCopyrightText: 2026 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup gpu
+ *
+ * Hand-written native MSL implementation of the `gpu_shader_sequencer_thumbs` shader (VSE
+ * timeline strip thumbnail draw). Bypasses the GLSL->MSL generator on Metal; opted-in from
+ * `infos/gpu_shader_sequencer_infos.hh` via `NATIVE_MSL_VERT_SOURCE()` / `NATIVE_MSL_FRAG_SOURCE()`.
+ * The GLSL sources (`gpu_shader_sequencer_thumbs_vert.glsl` +
+ * `gpu_shader_sequencer_thumbs_frag.glsl`, which pulls in `strip_box()` and `sdf_rounded_box()`
+ * from `common/gpu_shader_sequencer_lib.glsl`, inlined below) remain the default fallback, used
+ * whenever the `BLENDER_METAL_NO_NATIVE_MSL` runtime kill-switch is set (see
+ * `MTLShader::create_shader_library()` in `mtl_shader.mm`).
+ *
+ * Binding contract (re-derived from `mtl_shader_generate.hh`/`.cc`; must stay numerically in
+ * sync with the create-info in `infos/gpu_shader_sequencer_infos.hh`):
+ *   - Push-constant buffer: [[buffer(29)]] (MTL_PUSH_CONSTANT_BUFFER_SLOT). Single member
+ *     `ModelViewProjectionMatrix` (float4x4), matching create-info order.
+ *   - thumb_data:   UBO slot 0 -> [[buffer(16)]]  (MTL_UBO_SLOT_OFFSET = MTL_MAX_SSBO = 16).
+ *     `SeqStripThumbData thumb_data[GPU_SEQ_STRIP_DRAW_DATA_LEN]` (256 elements); struct layout
+ *     re-derived from `GPU_shader_shared.hh` (12 `float`s then a `float4 tint_color`, 64 bytes
+ *     total per element -- natural Metal struct alignment already matches the host-side std140-
+ *     compatible layout the CPU upload path expects, no manual padding required). Declared as a
+ *     `constant SeqStripThumbData *` (pointer) rather than the generator's reference-to-array
+ *     syntax; both are ABI-identical for indexed read access from `[[buffer(16)]]`.
+ *   - context_data: UBO slot 1 -> [[buffer(17)]]. `SeqContextDrawData` (single struct, 16 bytes:
+ *     3x 4-byte scalars + 1 pad float), also re-derived from `GPU_shader_shared.hh`.
+ *   - image: [[texture(8)]] [[sampler(0)]] (SAMPLER slot 0; MTL_SAMPLER_SLOT_OFFSET =
+ *     MTL_MAX_IMAGE_SLOTS = 8).
+ *   - No vertex attributes/buffers: this shader draws a 4-vertex fan per instance, purely from
+ *     `gl_VertexID` (`[[vertex_id]]`) and `gl_InstanceID`. `gl_InstanceID` emulation matches
+ *     `generate_instance_id()` in `mtl_shader_generate.cc`:
+ *     `gl_InstanceID = [[instance_id]] - [[base_instance]]`.
+ *   - Fragment output: fragColor [[color(0)]].
+ *   - Vertex NDC fixup (mtl_shader_generate.cc): flip Y, remap Z from [-1..1] to [0..1].
+ *
+ * The varying struct (`Varyings`) mirrors the `gpu_seq_thumb_iface` interface block
+ * (`gpu_interface_infos.hh`... actually declared inline in `gpu_shader_sequencer_infos.hh`)
+ * verbatim: `NO_PERSPECTIVE` -> `[[center_no_perspective]]`, `FLAT` -> `[[flat]]`, per
+ * `to_string(Interpolation)` in `mtl_shader_generate.cc`.
+ *
+ * MSL discipline: the rounded-box SDF and strip-box geometry (`sdf_rounded_box()`, `strip_box()`
+ * inlined below) are done entirely in `float`, matching the GLSL source's use of plain `float`
+ * for this coordinate/SDF math. The texture sample and tint multiply are done in half/half4. No
+ * `discard` is introduced -- the GLSL source clears the fragment to transparent black on SDF
+ * miss (`col = float4(0.0f)`) rather than discarding, preserving HSR; replicated verbatim.
+ */
+
+#pragma once
+
+using namespace metal;
+
+struct PushConstantBlock {
+  float4x4 ModelViewProjectionMatrix;
+};
+
+/* VSE per-thumbnail data for timeline rendering (GPU_shader_shared.hh). */
+struct SeqStripThumbData {
+  /* Strip rectangle positions. */
+  float left;
+  float right;
+  float bottom;
+  float top;
+  /* Thumbnail rectangle positions. */
+  float x1;
+  float y1;
+  float x2;
+  float y2;
+  /* Thumbnail UVs. */
+  float u1;
+  float v1;
+  float u2;
+  float v2;
+  float4 tint_color;
+};
+
+/* VSE global data for timeline rendering (GPU_shader_shared.hh). */
+struct SeqContextDrawData {
+  float round_radius;
+  float pixelsize;
+  uint col_back;
+  float _pad0;
+};
+
+struct Varyings {
+  float4 position [[position]];
+  float2 pos_interp [[center_no_perspective]];
+  float2 texCoord_interp [[center_no_perspective]];
+  uint thumb_id [[flat]];
+};
+
+vertex Varyings _gpu_shader_sequencer_thumbs_vert(
+    uint gl_VertexID [[vertex_id]],
+    uint gpu_InstanceIndex [[instance_id]],
+    uint gpu_BaseInstance [[base_instance]],
+    constant PushConstantBlock &mtl_pc [[buffer(29)]],
+    constant SeqStripThumbData *thumb_data [[buffer(16)]])
+{
+  Varyings out;
+
+  int id = int(gpu_InstanceIndex - gpu_BaseInstance);
+  out.thumb_id = uint(id);
+  int vid = int(gl_VertexID);
+  constant SeqStripThumbData &thumb = thumb_data[id];
+  float4 coords = float4(thumb.x1, thumb.y1, thumb.x2, thumb.y2);
+  float4 uvs = float4(thumb.u1, thumb.v1, thumb.u2, thumb.v2);
+
+  float2 co;
+  float2 uv;
+  if (vid == 0) {
+    co = coords.xw;
+    uv = uvs.xw;
+  }
+  else if (vid == 1) {
+    co = coords.xy;
+    uv = uvs.xy;
+  }
+  else if (vid == 2) {
+    co = coords.zw;
+    uv = uvs.zw;
+  }
+  else {
+    co = coords.zy;
+    uv = uvs.zy;
+  }
+
+  out.pos_interp = co;
+  out.texCoord_interp = uv;
+  out.position = mtl_pc.ModelViewProjectionMatrix * float4(co, 0.0f, 1.0f);
+  /* Metal NDC fixup, matches the GLSL->MSL generator (mtl_shader_generate.cc). */
+  out.position.y = -out.position.y;
+  out.position.z = (out.position.z + out.position.w) / 2.0f;
+  return out;
+}
+
+struct FragOut {
+  half4 fragColor [[color(0)]];
+};
+
+/* Signed distance to rounded box, centered at origin.
+ * Reference: https://iquilezles.org/articles/distfunctions2d/ (gpu_shader_sequencer_lib.glsl). */
+static float sdf_rounded_box(float2 pos, float2 size, float radius)
+{
+  float2 q = abs(pos) - size + radius;
+  return min(max(q.x, q.y), 0.0f) + length(max(q, float2(0.0f))) - radius;
+}
+
+fragment FragOut _gpu_shader_sequencer_thumbs_frag(
+    Varyings mtl_frag_in [[stage_in]],
+    constant SeqStripThumbData *thumb_data [[buffer(16)]],
+    constant SeqContextDrawData &context_data [[buffer(17)]],
+    texture2d<float, access::sample> image [[texture(8)]],
+    sampler image_samp_ [[sampler(0)]])
+{
+  FragOut out;
+
+  constant SeqStripThumbData &thumb = thumb_data[mtl_frag_in.thumb_id];
+
+  /* strip_box() from gpu_shader_sequencer_lib.glsl. */
+  float2 pos1 = round(float2(thumb.left, thumb.bottom));
+  float2 pos2 = round(float2(thumb.right, thumb.top));
+  /* Make sure strip is at least 1px wide. */
+  pos2.x = max(pos2.x, pos1.x + 1.0f);
+  float2 size = (pos2 - pos1) * 0.5f;
+  float2 center = (pos1 + pos2) * 0.5f;
+  float2 pos = round(mtl_frag_in.pos_interp);
+
+  float radius = context_data.round_radius;
+  if (radius > size.x) {
+    radius = 0.0f;
+  }
+
+  /* Sample thumbnail texture, modulate with color. */
+  half4 col = half4(image.sample(image_samp_, mtl_frag_in.texCoord_interp)) *
+             half4(thumb.tint_color);
+
+  /* Outside of strip rounded rectangle? */
+  float sdf = sdf_rounded_box(pos - center, size, radius);
+  if (sdf > 0.0f) {
+    col = half4(0.0h);
+  }
+
+  out.fragColor = col;
+  return out;
+}

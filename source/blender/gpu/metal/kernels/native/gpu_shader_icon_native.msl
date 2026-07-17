@@ -1,0 +1,163 @@
+/* SPDX-FileCopyrightText: 2026 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup gpu
+ *
+ * Hand-written native MSL implementation of the `gpu_shader_icon` shader (single-icon variant,
+ * `do_corner_masking = true`). Bypasses the GLSL->MSL generator on Metal; opted-in from
+ * `infos/gpu_shader_icon_infos.hh` via `NATIVE_MSL_VERT_SOURCE()` / `NATIVE_MSL_FRAG_SOURCE()`.
+ * The GLSL sources (`gpu_shader_icon_vert.glsl` + `gpu_shader_icon_frag.glsl`) remain the default
+ * fallback, used whenever the `BLENDER_METAL_NO_NATIVE_MSL` runtime kill-switch is set (see
+ * `MTLShader::create_shader_library()` in `mtl_shader.mm`).
+ *
+ * The multi-icon variant (`gpu_shader_icon_multi`, `do_corner_masking = false`) is a distinct
+ * create-info with a different vertex source and entry-point names; it is converted separately in
+ * `gpu_shader_icon_multi_native.msl` (duplicating this file's fragment logic, since Metal function
+ * names must be unique per create-info and the `do_corner_masking` value differs).
+ *
+ * Binding contract (re-derived from `mtl_shader_generate.hh`/`.cc`; must stay numerically in
+ * sync with the create-info in `infos/gpu_shader_icon_infos.hh`):
+ *   - Push-constant buffer: [[buffer(29)]] (MTL_PUSH_CONSTANT_BUFFER_SLOT = MTL_MAX_SSBO(16) +
+ *     MTL_MAX_UBO(13)). Members declared in the exact create-info order (from the shared
+ *     `gpu_shader_icon_shared` info): ModelViewProjectionMatrix, finalColor, rect_icon,
+ *     rect_geom, text_width.
+ *   - image: [[texture(8)]] [[sampler(0)]] (SAMPLER slot 0; MTL_SAMPLER_SLOT_OFFSET =
+ *     MTL_MAX_IMAGE_SLOTS = 8).
+ *   - No vertex attributes/buffers: this shader draws a 4-vertex fan purely from `gl_VertexID`
+ *     (`[[vertex_id]]`), matching `gpu_shader_icon_vert.glsl`.
+ *   - Fragment output: fragColor [[color(0)]].
+ *   - Vertex NDC fixup (mtl_shader_generate.cc): flip Y, remap Z from [-1..1] to [0..1].
+ *   - `do_corner_masking` is a `COMPILATION_CONSTANT`, *not* a `SPECIALIZATION_CONSTANT`: per
+ *     `generate_compilation_constant()` in `mtl_shader_generate.cc`, it lowers to a plain global
+ *     `constant bool` (compile-time literal baked per create-info), never a Metal
+ *     `[[function_constant(...)]]`. It therefore needs no specialization-constant plumbing here;
+ *     it is simply hard-coded `true` for this variant, matching `gpu_shader_icon`'s create-info.
+ *
+ * The varying struct (`Varyings`) is owned entirely by this file: it mirrors the `icon_interp_iface`
+ * interface block (`gpu_interface_infos.hh`) verbatim and is shared between the vertex and fragment
+ * entry points below, so no explicit `[[user(locn)]]` is required.
+ *
+ * MSL discipline (Apple-recommended half-precision color math): color math (texture sample, tint
+ * multiply, mask mix) is done in half/half4. The corner-mask SDF-like geometry (circle center,
+ * radius, smoothstep edges) is done in float, matching the GLSL source's use of plain `float`.
+ * No `discard` is introduced (the GLSL source has none).
+ */
+
+#pragma once
+
+using namespace metal;
+
+/* `do_corner_masking` COMPILATION_CONSTANT, baked for the `gpu_shader_icon` create-info. */
+constant bool do_corner_masking = true;
+
+struct PushConstantBlock {
+  float4x4 ModelViewProjectionMatrix;
+  float4 finalColor;
+  float4 rect_icon;
+  float4 rect_geom;
+  float text_width;
+};
+
+struct Varyings {
+  float4 position [[position]];
+  float4 final_color [[flat]];
+  float2 texCoord_interp [[center_perspective]];
+  float2 mask_coord_interp [[center_perspective]];
+};
+
+vertex Varyings _gpu_shader_icon_vert(uint gl_VertexID [[vertex_id]],
+                                      constant PushConstantBlock &mtl_pc [[buffer(29)]])
+{
+  Varyings out;
+
+  float2 uv;
+  float2 co;
+  int vid = int(gl_VertexID);
+
+  if (vid == 0) {
+    co = mtl_pc.rect_geom.xw;
+    uv = mtl_pc.rect_icon.xw;
+    out.mask_coord_interp = float2(0.0f, 1.0f);
+  }
+  else if (vid == 1) {
+    co = mtl_pc.rect_geom.xy;
+    uv = mtl_pc.rect_icon.xy;
+    out.mask_coord_interp = float2(0.0f, 0.0f);
+  }
+  else if (vid == 2) {
+    co = mtl_pc.rect_geom.zw;
+    uv = mtl_pc.rect_icon.zw;
+    out.mask_coord_interp = float2(1.0f, 1.0f);
+  }
+  else {
+    co = mtl_pc.rect_geom.zy;
+    uv = mtl_pc.rect_icon.zy;
+    out.mask_coord_interp = float2(1.0f, 0.0f);
+  }
+
+  /* Put origin in lower right corner. */
+  out.mask_coord_interp.x -= 1.0f;
+
+  out.position = mtl_pc.ModelViewProjectionMatrix * float4(co, 0.0f, 1.0f);
+  /* Metal NDC fixup, matches the GLSL->MSL generator (mtl_shader_generate.cc). */
+  out.position.y = -out.position.y;
+  out.position.z = (out.position.z + out.position.w) / 2.0f;
+  out.texCoord_interp = uv;
+  out.final_color = mtl_pc.finalColor;
+  return out;
+}
+
+struct FragOut {
+  half4 fragColor [[color(0)]];
+};
+
+fragment FragOut _gpu_shader_icon_frag(Varyings mtl_frag_in [[stage_in]],
+                                       constant PushConstantBlock &mtl_pc [[buffer(29)]],
+                                       texture2d<float, access::sample> image [[texture(8)]],
+                                       sampler image_samp_ [[sampler(0)]])
+{
+  FragOut out;
+
+  /* Sample texture with LOD BIAS. Used instead of custom LOD bias in GPU_SAMPLER_CUSTOM_ICON. */
+  half4 frag_color = half4(
+      image.sample(image_samp_, mtl_frag_in.texCoord_interp, bias(-0.5f)));
+  frag_color *= half4(mtl_frag_in.final_color);
+
+  if (do_corner_masking) {
+    /* Top-left rounded corner parameters. */
+    constexpr float circle_radius_outer = 0.1f;
+    constexpr float circle_radius_inner = 0.075f;
+
+    /**
+     * Add a bit transparency to see a bit of the icon, without
+     * getting on the way of readability. */
+    constexpr float mask_transparency = 0.25f;
+
+    float2 circle_center = float2(circle_radius_outer - mtl_pc.text_width, 0.5f);
+
+    /* Radius in icon space (1 is the icon width). */
+    float radius = length(mtl_frag_in.mask_coord_interp - circle_center);
+    float mask = smoothstep(circle_radius_inner, circle_radius_outer, radius);
+
+    bool lower_half = mtl_frag_in.mask_coord_interp.y < circle_center.y;
+    bool right_half = mtl_frag_in.mask_coord_interp.x > circle_center.x;
+
+    if (right_half && mtl_frag_in.mask_coord_interp.y < circle_center.y + circle_radius_outer) {
+      mask = smoothstep(circle_center.y + circle_radius_inner,
+                        circle_center.y + circle_radius_outer,
+                        mtl_frag_in.mask_coord_interp.y);
+    }
+    if (lower_half && mtl_frag_in.mask_coord_interp.x > circle_center.x - circle_radius_outer) {
+      mask = smoothstep(circle_center.x - circle_radius_inner,
+                        circle_center.x - circle_radius_outer,
+                        mtl_frag_in.mask_coord_interp.x);
+    }
+
+    frag_color = mix(half4(0.0h), frag_color, half(max(mask_transparency, mask)));
+  }
+
+  out.fragColor = frag_color;
+  return out;
+}

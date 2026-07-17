@@ -15,5 +15,9 @@ SAMPLER(0, sampler2D, transparent_accum)
 SAMPLER(1, sampler2D, transparent_revealage)
 FRAGMENT_SOURCE("workbench_transparent_resolve_frag.glsl")
 VERTEX_SOURCE("workbench_fullscreen_vert.glsl")
+/* Hand-written native MSL, used on Metal unless BLENDER_METAL_NO_NATIVE_MSL is set. See
+ * native/workbench_transparent_resolve_native.msl. */
+NATIVE_MSL_VERT_SOURCE("workbench_transparent_resolve_native.msl")
+NATIVE_MSL_FRAG_SOURCE("workbench_transparent_resolve_native.msl")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()

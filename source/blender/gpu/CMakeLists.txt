@@ -600,6 +600,9 @@ set(MTL_BACKEND_GLSL_SRC
   # runtime fallback.
   metal/kernels/native/gpu_shader_2D_image_overlays_merge_native.msl
   metal/kernels/native/gpu_shader_cycles_display_fallback_native.msl
+  metal/kernels/native/gpu_shader_icon_native.msl
+  metal/kernels/native/gpu_shader_icon_multi_native.msl
+  metal/kernels/native/gpu_shader_sequencer_thumbs_native.msl
 )
 
 set(MSL_SRC

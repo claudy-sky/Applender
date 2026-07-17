@@ -755,6 +755,18 @@ set(GLSL_SRC
   intern/shaders/draw_curves_test.glsl
 )
 
+set(MTL_BACKEND_GLSL_SRC
+  # Hand-written native MSL shader sources (bypass the GLSL->MSL generator, see
+  # ShaderCreateInfo::native_msl_vert_source() / native_msl_frag_source() and
+  # MTLShader::create_shader_library() in gpu/metal/mtl_shader.mm). The matching GLSL sources
+  # above stay registered as the runtime fallback.
+  engines/workbench/shaders/native/workbench_transparent_resolve_native.msl
+)
+
+if(WITH_METAL_BACKEND)
+  list(APPEND GLSL_SRC ${MTL_BACKEND_GLSL_SRC})
+endif()
+
 # These tests depend on gpu_shader_test, so they're only included when WITH_GPU_BACKEND_TESTS is enabled.
 set(GLSL_SRC_TEST
   engines/eevee/shaders/eevee_test_gbuffer_closure.bsl.hh
