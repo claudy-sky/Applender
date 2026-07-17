@@ -8,14 +8,20 @@
 
 #include <cstring>
 
+#include "BLI_fileops.hh"
+#include "BLI_fileops_types.hh"
+#include "BLI_path_utils.hh"
 #include "BLI_threads.hh"
 
+#include "BKE_appdir.hh"
+#include "BKE_blender_version.h"
 #include "BKE_global.hh"
 
 #include "gpu_backend.hh"
 #include "mtl_backend.hh"
 #include "mtl_batch.hh"
 #include "mtl_context.hh"
+#include "mtl_debug.hh"
 #include "mtl_framebuffer.hh"
 #include "mtl_immediate.hh"
 #include "mtl_index_buffer.hh"
@@ -47,12 +53,21 @@ thread_local int g_autoreleasepool_depth = 0;
 
 void MTLBackend::init_resources()
 {
+  /* Opt-in on-disk PSO binary archive -- see comment on `pso_binary_archive_` in mtl_backend.hh.
+   * No-op (and issues zero Metal API calls) unless BLENDER_METAL_PSO_ARCHIVE is set, so this must
+   * run before the compiler starts baking PSOs. */
+  pso_binary_archive_init();
+
   compiler_ = MEM_new<MTLShaderCompiler>(__func__);
 }
 
 void MTLBackend::delete_resources()
 {
   MEM_delete(compiler_);
+
+  /* Persist any newly-harvested PSOs before shutdown. No-op if the archive was never created
+   * (feature disabled this session, or init failed). */
+  pso_binary_archive_serialize_and_free();
 }
 
 Context *MTLBackend::context_alloc(GHOST_IWindow *ghost_window, GHOST_IContext *ghost_context)
@@ -191,6 +206,215 @@ void MTLBackend::render_step(bool force_resource_release)
 bool MTLBackend::is_inside_render_boundary()
 {
   return (g_autoreleasepool != nil);
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name PSO Binary Archive (opt-in on-disk PSO cache)
+ *
+ * See the design comment on `pso_binary_archive_` in mtl_backend.hh for the rationale and
+ * ownership model. Everything below is gated behind `BLENDER_METAL_PSO_ARCHIVE`; with the
+ * env var unset, `pso_binary_archive_init()` returns immediately and every other function here
+ * is either never called or a cheap no-op check against a null `pso_binary_archive_`.
+ * \{ */
+
+/* Bump whenever archive *content* could change shape -- a new bake call site starts harvesting,
+ * the render/compute pipeline descriptor construction changes, etc. A schema mismatch means the
+ * on-disk file is deleted and rebuilt from scratch rather than risking a stale/incompatible
+ * lookup; this is intentionally a cheap hand-maintained constant rather than the build's git hash
+ * (see `pso_binary_archive_filename()` below for why). Checked once and cached, matching the
+ * `METAL_FORCE_INTEL` / `BLENDER_METAL_RAYTRACING` pattern used elsewhere in this file. */
+#define MTL_PSO_ARCHIVE_SCHEMA_VERSION 1
+
+static bool metal_pso_archive_enabled()
+{
+  static const bool enabled = (getenv("BLENDER_METAL_PSO_ARCHIVE") != nullptr);
+  return enabled;
+}
+
+/* Sub-directory of BKE_appdir_folder_caches() holding all PSO archive files (current and stale,
+ * across versions) -- kept separate from other caches so `shader_cache_dir_clear_old()` can scan
+ * it in isolation. */
+static const char *pso_archive_subdir()
+{
+  return "mtl_pso_archive";
+}
+
+/* Namespaced for staleness: BLENDER_VERSION + BLENDER_FILE_VERSION + a hand-bumped
+ * MTL_PSO_ARCHIVE_SCHEMA_VERSION (see above). Ideally this would also fold in the build's git
+ * commit hash (`build_hash`, see source/creator/buildinfo.c) for maximal precision, but that
+ * symbol lives in the `creator` module behind `WITH_BUILDINFO_HEADER` -- pulling a `creator`
+ * symbol into `gpu` would be a layering violation, and the symbol would not exist at all on
+ * builds without buildinfo enabled. MTL_PSO_ARCHIVE_SCHEMA_VERSION exists precisely to cover that
+ * gap: bump it by hand on any generator change. A filename mismatch (older/newer Blender, or an
+ * old schema) always means the file is deleted, never reused -- see `pso_binary_archive_init()`
+ * and `shader_cache_dir_clear_old()`. */
+static std::string pso_binary_archive_filename()
+{
+  return "pso_archive_" + std::to_string(BLENDER_VERSION) + "_" +
+        std::to_string(BLENDER_FILE_VERSION) + "_schema" +
+        std::to_string(MTL_PSO_ARCHIVE_SCHEMA_VERSION) + ".bin";
+}
+
+void MTLBackend::pso_binary_archive_init()
+{
+  if (!metal_pso_archive_enabled()) {
+    return;
+  }
+
+  /* Device is required to create the archive; only available once a context has been activated,
+   * which is always true by the time `init_resources()` runs (see GPU_init() call order). Guard
+   * defensively regardless -- harvesting is a pure optimization and must never be a hard
+   * dependency. */
+  MTLContext *ctx = MTLContext::get();
+  if (ctx == nullptr || ctx->device == nil) {
+    MTL_LOG_WARNING(
+        "BLENDER_METAL_PSO_ARCHIVE: no active Metal context at GPU init; PSO archive disabled "
+        "for this session.\n");
+    return;
+  }
+
+  @autoreleasepool {
+    char cache_dir[FILE_MAX];
+    BKE_appdir_folder_caches(cache_dir, sizeof(cache_dir));
+    if (cache_dir[0] == '\0') {
+      MTL_LOG_WARNING(
+          "BLENDER_METAL_PSO_ARCHIVE: could not resolve cache directory; PSO archive disabled "
+          "for this session.\n");
+      return;
+    }
+    BLI_path_append(cache_dir, sizeof(cache_dir), pso_archive_subdir());
+    BLI_dir_create_recursive(cache_dir);
+    BLI_path_append(cache_dir, sizeof(cache_dir), pso_binary_archive_filename().c_str());
+
+    const bool file_exists = BLI_exists(cache_dir);
+    NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:cache_dir]];
+
+    /* Attempt to load the existing archive (if any). ANY failure here -- corrupt file, read
+     * error, version mismatch the OS itself detects -- must delete the file and fall back to a
+     * fresh, empty archive. A partially-loaded archive is never used. */
+    id<MTLBinaryArchive> archive = nil;
+    NSError *error = nullptr;
+    {
+      MTLBinaryArchiveDescriptor *desc = [[MTLBinaryArchiveDescriptor alloc] init];
+      if (file_exists) {
+        desc.url = url;
+      }
+      archive = [ctx->device newBinaryArchiveWithDescriptor:desc error:&error];
+      [desc release];
+    }
+
+    if (error != nullptr || archive == nil) {
+      MTL_LOG_WARNING(
+          "BLENDER_METAL_PSO_ARCHIVE: failed to load archive at '%s' (%s); deleting and "
+          "starting fresh.\n",
+          cache_dir,
+          error ? [[error localizedDescription] UTF8String] : "unknown error");
+      if (file_exists) {
+        BLI_delete(cache_dir, false, false);
+      }
+
+      /* Retry with a non-loading descriptor -- creates a fresh, empty in-memory archive. */
+      error = nullptr;
+      MTLBinaryArchiveDescriptor *empty_desc = [[MTLBinaryArchiveDescriptor alloc] init];
+      archive = [ctx->device newBinaryArchiveWithDescriptor:empty_desc error:&error];
+      [empty_desc release];
+
+      if (error != nullptr || archive == nil) {
+        MTL_LOG_WARNING(
+            "BLENDER_METAL_PSO_ARCHIVE: failed to create empty archive (%s); PSO archive "
+            "disabled for this session.\n",
+            error ? [[error localizedDescription] UTF8String] : "unknown error");
+        return;
+      }
+    }
+
+    /* `newBinaryArchiveWithDescriptor:error:` follows the Cocoa "new" convention and already
+     * hands back an owned (+1) reference -- no extra retain needed here, matching how PSOs and
+     * sampler states obtained via other `new*With...` device calls elsewhere in this file are
+     * stored without an additional retain and released exactly once on teardown. */
+    pso_binary_archive_ = (void *)archive;
+    pso_binary_archive_path_ = cache_dir;
+  }
+}
+
+void MTLBackend::pso_binary_archive_serialize_and_free()
+{
+  if (pso_binary_archive_ == nullptr) {
+    return;
+  }
+
+  @autoreleasepool {
+    id<MTLBinaryArchive> archive = (id<MTLBinaryArchive>)pso_binary_archive_;
+
+    /* Write to a temp file and atomically rename over the real path, so a crash or power loss
+     * mid-write can never leave a torn/unreadable archive for the next session to trip over. */
+    const std::string tmp_path = pso_binary_archive_path_ + ".tmp";
+    NSURL *tmp_url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:tmp_path.c_str()]];
+
+    NSError *error = nullptr;
+    bool ok;
+    {
+      /* Serialization races against any in-flight harvest calls on compiler worker threads;
+       * `delete_resources()` frees the compiler before calling this function, so in practice
+       * no bake sites remain active here, but taking the lock keeps this correct even if that
+       * ordering ever changes, at negligible cost. */
+      std::lock_guard<std::mutex> lock(pso_binary_archive_mutex_);
+      ok = [archive serializeToURL:tmp_url error:&error];
+    }
+
+    if (!ok) {
+      MTL_LOG_WARNING(
+          "BLENDER_METAL_PSO_ARCHIVE: failed to serialize archive (%s); discarding cache for "
+          "this session.\n",
+          error ? [[error localizedDescription] UTF8String] : "unknown error");
+      BLI_delete(tmp_path.c_str(), false, false);
+    }
+    else if (BLI_rename_overwrite(tmp_path.c_str(), pso_binary_archive_path_.c_str()) != 0) {
+      MTL_LOG_WARNING("BLENDER_METAL_PSO_ARCHIVE: failed to move archive into place at '%s'.\n",
+                       pso_binary_archive_path_.c_str());
+      BLI_delete(tmp_path.c_str(), false, false);
+    }
+
+    [archive release];
+    pso_binary_archive_ = nullptr;
+  }
+}
+
+void MTLBackend::shader_cache_dir_clear_old()
+{
+  /* Runs unconditionally at shutdown (see wm_init_exit.cc), independent of whether
+   * BLENDER_METAL_PSO_ARCHIVE is set for *this* session, so files left behind by a previous
+   * opted-in session (or an older Blender version / schema) still get pruned even if the
+   * feature is off right now. */
+  char cache_dir[FILE_MAX];
+  BKE_appdir_folder_caches(cache_dir, sizeof(cache_dir));
+  if (cache_dir[0] == '\0') {
+    return;
+  }
+  BLI_path_append(cache_dir, sizeof(cache_dir), pso_archive_subdir());
+  if (!BLI_exists(cache_dir)) {
+    return;
+  }
+
+  /* Any file whose name doesn't match the archive filename for the *current*
+   * BLENDER_VERSION/BLENDER_FILE_VERSION/MTL_PSO_ARCHIVE_SCHEMA_VERSION combination is stale and
+   * is deleted outright rather than risked being reused later (see pso_binary_archive_init()). */
+  const std::string current_filename = pso_binary_archive_filename();
+
+  direntry *filelist = nullptr;
+  const uint num_files = BLI_filelist_dir_contents(cache_dir, &filelist);
+  for (uint i = 0; i < num_files; i++) {
+    const direntry &entry = filelist[i];
+    if (S_ISDIR(entry.s.st_mode)) {
+      continue;
+    }
+    if (current_filename != entry.relname) {
+      BLI_delete(entry.path, false, false);
+    }
+  }
+  BLI_filelist_free(filelist, num_files);
 }
 
 /** \} */

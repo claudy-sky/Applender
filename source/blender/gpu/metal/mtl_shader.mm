@@ -1004,6 +1004,15 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
     MTLAutoreleasedRenderPipelineReflection reflection_data;
     NSError *error = nullptr;
 
+    /* Opt-in on-disk PSO archive (BLENDER_METAL_PSO_ARCHIVE, default off -- see mtl_backend.mm).
+     * Lookup misses fall back to normal compilation automatically -- `failOnBinaryArchiveMiss` is
+     * intentionally never set -- so attaching the archive here is always safe. */
+    id<MTLBinaryArchive> pso_archive = (id<MTLBinaryArchive>)MTLBackend::get()
+                                            ->get_pso_binary_archive_raw();
+    if (pso_archive) {
+      desc.binaryArchives = @[pso_archive];
+    }
+
     /* Compile PSO */
     id<MTLRenderPipelineState> pso = [ctx->device
         newRenderPipelineStateWithDescriptor:desc
@@ -1019,6 +1028,21 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
       NSLog(@"Failed to create PSO for shader: %s, but no error was provided!\n", this->name);
       BLI_assert(false);
       return nullptr;
+    }
+
+    /* Harvest the freshly-baked PSO into the archive for future warm starts. Bake calls can run
+     * concurrently on shader-compiler worker threads, so mutation is guarded by the archive's
+     * dedicated mutex; harvesting failure must never fail rendering -- log and continue with the
+     * already-successful `pso`. */
+    if (pso_archive) {
+      std::lock_guard<std::mutex> lock(MTLBackend::get()->get_pso_binary_archive_mutex());
+      NSError *harvest_error = nullptr;
+      if (![pso_archive addRenderPipelineFunctionsWithDescriptor:desc error:&harvest_error]) {
+        MTL_LOG_WARNING(
+            "BLENDER_METAL_PSO_ARCHIVE: failed to harvest render PSO for shader '%s': %s\n",
+            this->name,
+            harvest_error ? [[harvest_error localizedDescription] UTF8String] : "unknown error");
+      }
     }
 
     /* Prepare pipeline state instance. */
@@ -1101,6 +1125,15 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
   desc.label = [NSString stringWithUTF8String:this->name];
   desc.computeFunction = compute_function;
 
+  /* Opt-in on-disk PSO archive (BLENDER_METAL_PSO_ARCHIVE, default off -- see mtl_backend.mm).
+   * Lookup misses fall back to normal compilation automatically -- `failOnBinaryArchiveMiss` is
+   * intentionally never set -- so attaching the archive here is always safe. */
+  id<MTLBinaryArchive> pso_archive = (id<MTLBinaryArchive>)MTLBackend::get()
+                                          ->get_pso_binary_archive_raw();
+  if (pso_archive) {
+    desc.binaryArchives = @[pso_archive];
+  }
+
   id<MTLComputePipelineState> pso = [ctx->device
       newComputePipelineStateWithDescriptor:desc
                                     options:MTLPipelineOptionNone
@@ -1131,6 +1164,22 @@ MTLComputePipelineStateInstance *MTLShader::bake_compute_pipeline_state(
                                                        options:MTLPipelineOptionNone
                                                     reflection:nullptr
                                                          error:&error];
+    }
+  }
+
+  /* Harvest the freshly-baked PSO into the archive for future warm starts, before `desc` (which
+   * the archive needs to identify the function it just compiled) is released below. Bake calls
+   * can run concurrently on shader-compiler worker threads, so mutation is guarded by the
+   * archive's dedicated mutex; harvesting failure must never fail rendering -- log and continue
+   * with the already-successful `pso`. */
+  if (pso_archive && pso) {
+    std::lock_guard<std::mutex> lock(MTLBackend::get()->get_pso_binary_archive_mutex());
+    NSError *harvest_error = nullptr;
+    if (![pso_archive addComputePipelineFunctionsWithDescriptor:desc error:&harvest_error]) {
+      MTL_LOG_WARNING(
+          "BLENDER_METAL_PSO_ARCHIVE: failed to harvest compute PSO for shader '%s': %s\n",
+          this->name,
+          harvest_error ? [[harvest_error localizedDescription] UTF8String] : "unknown error");
     }
   }
 
