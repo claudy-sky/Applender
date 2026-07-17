@@ -7808,6 +7808,26 @@ def km_3d_view_tool_cad_extrude(_params):
     )
 
 
+def km_3d_view_tool_cad_fillet(_params):
+    return (
+        "3D View Tool: Object, CAD Fillet",
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("cad.fillet", {"type": 'LEFTMOUSE', "value": 'PRESS'}, None),
+        ]},
+    )
+
+
+def km_3d_view_tool_cad_chamfer(_params):
+    return (
+        "3D View Tool: Object, CAD Chamfer",
+        {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
+        {"items": [
+            ("cad.chamfer", {"type": 'LEFTMOUSE', "value": 'PRESS'}, None),
+        ]},
+    )
+
+
 # ------------------------------------------------------------------------------
 # Tool System (3D View, Edit Mesh)
 
@@ -9211,6 +9231,8 @@ def generate_keymaps(params=None):
         km_3d_view_tool_measure(params),
         km_3d_view_tool_interactive_add(params),
         km_3d_view_tool_cad_extrude(params),
+        km_3d_view_tool_cad_fillet(params),
+        km_3d_view_tool_cad_chamfer(params),
         km_3d_view_tool_pose_breakdowner(params),
         km_3d_view_tool_pose_push(params),
         km_3d_view_tool_pose_relax(params),

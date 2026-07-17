@@ -746,6 +746,26 @@ class _defs_cad:
             keymap="3D View Tool: Object, CAD Extrude",
         )
 
+    @ToolDef.from_fn
+    def fillet():
+        return dict(
+            idname="builtin.cad_fillet",
+            label="CAD Fillet",
+            icon="ops.mesh.bevel",
+            widget=None,
+            keymap="3D View Tool: Object, CAD Fillet",
+        )
+
+    @ToolDef.from_fn
+    def chamfer():
+        return dict(
+            idname="builtin.cad_chamfer",
+            label="CAD Chamfer",
+            icon="ops.mesh.bevel",
+            widget=None,
+            keymap="3D View Tool: Object, CAD Chamfer",
+        )
+
 
 # -----------------------------------------------------------------------------
 # Object Modes (named based on context.mode)
@@ -3813,7 +3833,7 @@ class VIEW3D_PT_tools_active(ToolSelectPanelHelper, Panel):
             None,
             _tools_view3d_add,
             lambda context: (
-                (_defs_cad.extrude,)
+                (_defs_cad.extrude, _defs_cad.fillet, _defs_cad.chamfer)
                 if bpy.app.build_options.occt
                 else ()
             ),

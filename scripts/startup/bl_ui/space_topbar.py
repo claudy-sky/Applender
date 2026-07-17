@@ -387,6 +387,10 @@ class TOPBAR_MT_file_import(Menu):
         if bpy.app.build_options.io_fbx:
             self.layout.operator("wm.fbx_import", text="FBX (.fbx)")
 
+        if bpy.app.build_options.occt:
+            self.layout.operator("cad.import_step", text="STEP (.step)")
+            self.layout.operator("cad.import_iges", text="IGES (.iges)")
+
 
 class TOPBAR_MT_file_export(Menu):
     bl_idname = "TOPBAR_MT_file_export"
@@ -414,6 +418,10 @@ class TOPBAR_MT_file_export(Menu):
             self.layout.operator("wm.ply_export", text="Stanford PLY (.ply)")
         if bpy.app.build_options.io_stl:
             self.layout.operator("wm.stl_export", text="STL (.stl)")
+
+        if bpy.app.build_options.occt:
+            self.layout.operator("cad.export_step", text="STEP (.step)")
+            self.layout.operator("cad.export_iges", text="IGES (.iges)")
 
 
 class TOPBAR_MT_file_external_data(Menu):
