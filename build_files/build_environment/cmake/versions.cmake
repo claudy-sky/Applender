@@ -361,6 +361,18 @@ set(MANIFOLD_HOMEPAGE https://github.com/elalish/manifold)
 set(MANIFOLD_LICENSE SPDX:Apache-2.0)
 set(MANIFOLD_COPYRIGHT "Copyright 2021-2026 The Manifold Authors.")
 
+set(OCCT_VERSION V7_8_1)
+set(OCCT_NAME "OpenCASCADE")
+set(OCCT_URI https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/${OCCT_VERSION}.tar.gz)
+# TODO(on-device): replace with real MD5 of the downloaded tarball before first build --
+# cmake will fail the URL_HASH check until then.
+set(OCCT_HASH 00000000000000000000000000000000)
+set(OCCT_HASH_TYPE MD5)
+set(OCCT_FILE OCCT-${OCCT_VERSION}.tar.gz)
+set(OCCT_HOMEPAGE https://github.com/Open-Cascade-SAS/OCCT)
+set(OCCT_LICENSE "SPDX:LGPL-2.1-or-later WITH OCCT-exception-1.0")
+set(OCCT_COPYRIGHT "Copyright (c) Open Cascade SAS")
+
 set(RUBBERBAND_VERSION 4.0.0)
 set(RUBBERBAND_NAME "Rubber Band Library")
 set(RUBBERBAND_URI https://breakfastquay.com/files/releases/rubberband-${RUBBERBAND_VERSION}.tar.bz2)

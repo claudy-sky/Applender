@@ -297,6 +297,12 @@ option(WITH_XR_OPENXR "Enable VR features through the OpenXR specification" ON)
 
 option(WITH_GMP "Enable features depending on GMP (Exact Boolean)" ON)
 option(WITH_MANIFOLD "Enable features depending on Manifold (Fast Robust Boolean)" ON)
+option(WITH_OCCT "Enable CAD solid-modeling support (OCCT B-rep kernel: extrude/boolean tools). Large optional dependency, off by default." OFF)
+# Fail early with a clear message instead of a confusing missing-header error
+# deep in the build.
+if(WITH_OCCT AND NOT APPLE)
+  message(FATAL_ERROR "WITH_OCCT is only supported on macOS in this fork.")
+endif()
 
 option(WITH_OPENIMAGEDENOISE "Enable the OpenImageDenoise compositing node" ON)
 
@@ -2138,6 +2144,7 @@ if(FIRST_RUN)
   info_cfg_option(WITH_INPUT_IME)
   info_cfg_option(WITH_INTERNATIONAL)
   info_cfg_option(WITH_MANIFOLD)
+  info_cfg_option(WITH_OCCT)
   info_cfg_option(WITH_OPENIMAGEDENOISE)
   info_cfg_option(WITH_OPENSUBDIV)
   info_cfg_option(WITH_OPENVDB)

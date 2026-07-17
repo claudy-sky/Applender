@@ -179,6 +179,15 @@ include(cmake/spirv-reflect.cmake)
 include(cmake/pybind11.cmake)
 include(cmake/nanobind.cmake)
 include(cmake/manifold.cmake)
+# OCCT is a large CAD kernel only needed for Blender builds with WITH_OCCT=ON
+# (default OFF), so unlike the other dependencies it is opt-in here as well.
+# NOTE: this deviates from the convention of unconditionally including every
+# dependency; drop the option and gate if OCCT ever becomes a default part of
+# the platform library set.
+option(WITH_OCCT "Build OpenCASCADE (OCCT), the CAD B-rep kernel used by Blender's optional WITH_OCCT feature" OFF)
+if(WITH_OCCT)
+  include(cmake/occt.cmake)
+endif()
 include(cmake/rubberband.cmake)
 include(cmake/abseil.cmake)
 include(cmake/eigen.cmake)

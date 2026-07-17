@@ -358,6 +358,10 @@ if(WITH_MCP)
   add_definitions(-DWITH_MCP)
 endif()
 
+if(WITH_OCCT)
+  add_definitions(-DWITH_OCCT)
+endif()
+
 if(WITH_EXPERIMENTAL_FEATURES)
   add_definitions(-DWITH_EXPERIMENTAL_FEATURES)
 endif()

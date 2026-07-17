@@ -47,4 +47,11 @@ set(LIB
   PRIVATE bf::windowmanager
 )
 
+if(WITH_OCCT)
+  add_definitions(-DWITH_OCCT)
+  list(APPEND LIB
+    bf_editor_cad
+  )
+endif()
+
 blender_add_lib(bf_editor_space_api "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
