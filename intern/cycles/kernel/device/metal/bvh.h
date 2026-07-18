@@ -57,6 +57,25 @@ struct MetalRTIntersectionShadowPayload {
   uint visibility;
 };
 
+/* Forcing a triangle opaque lets the MetalRT hardware skip its intersection function. That is only
+ * safe when the function has no self-intersection, visibility, or linking work left to perform.
+ * `no_custom_filtering` captures the caller-specific part of that condition; here we additionally
+ * require that the ray's visibility fits the 8-bit Metal instance mask (no high bits) and that the
+ * scene has no geometry whose instance mask was force-widened to 0xFF (which relies on the function
+ * for culling). Gated behind __METALRT_OPAQUE_FASTPATH__ so it can be disabled at runtime. */
+ccl_device_forceinline bool metalrt_can_force_opaque(const bool no_custom_filtering,
+                                                     const uint visibility)
+{
+#if defined(__METALRT_OPAQUE_FASTPATH__)
+  return no_custom_filtering && (visibility & ~0xFFu) == 0 &&
+         !kernel_data.bvh.have_visibility_masked_geometry;
+#else
+  (void)no_custom_filtering;
+  (void)visibility;
+  return false;
+#endif
+}
+
 #ifdef __HAIR__
 ccl_device_forceinline bool curve_ribbon_accept(KernelGlobals kg,
                                                 const float u,
@@ -172,7 +191,11 @@ ccl_device_intersect bool scene_intersect(KernelGlobals kg,
 {
   metal::raytracing::ray r(ray->P, ray->D, ray->tmin, ray->tmax);
   metalrt_intersector_type metalrt_intersect;
-  metalrt_intersect.force_opacity(metal::raytracing::forced_opacity::non_opaque);
+  const bool no_custom_filtering = ray->self.prim == PRIM_NONE && !kernel_data.bvh.have_curves &&
+                                   !kernel_data.bvh.have_points;
+  metalrt_intersect.force_opacity(metalrt_can_force_opaque(no_custom_filtering, visibility) ?
+                                      metal::raytracing::forced_opacity::opaque :
+                                      metal::raytracing::forced_opacity::non_opaque);
   metalrt_intersect.assume_geometry_type(
       metal::raytracing::geometry_type::triangle |
       (kernel_data.bvh.have_curves ? metal::raytracing::geometry_type::curve :
@@ -288,7 +311,14 @@ ccl_device_intersect bool scene_intersect_shadow(KernelGlobals kg,
 {
   metal::raytracing::ray r(ray->P, ray->D, ray->tmin, ray->tmax);
   metalrt_intersector_type metalrt_intersect;
-  metalrt_intersect.force_opacity(metal::raytracing::forced_opacity::non_opaque);
+  const bool no_custom_filtering =
+      ray->self.prim == PRIM_NONE && ray->self.light_prim == PRIM_NONE &&
+      !kernel_data.bvh.have_curves && !kernel_data.bvh.have_points &&
+      !(kernel_data.kernel_features &
+        (KERNEL_FEATURE_LIGHT_LINKING | KERNEL_FEATURE_SHADOW_LINKING));
+  metalrt_intersect.force_opacity(metalrt_can_force_opaque(no_custom_filtering, visibility) ?
+                                      metal::raytracing::forced_opacity::opaque :
+                                      metal::raytracing::forced_opacity::non_opaque);
   metalrt_intersect.assume_geometry_type(
       metal::raytracing::geometry_type::triangle |
       (kernel_data.bvh.have_curves ? metal::raytracing::geometry_type::curve :

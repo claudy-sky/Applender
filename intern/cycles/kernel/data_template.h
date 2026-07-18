@@ -57,6 +57,15 @@ KERNEL_STRUCT_MEMBER(bvh, int, have_volumes)
 KERNEL_STRUCT_MEMBER(bvh, int, bvh_layout)
 KERNEL_STRUCT_MEMBER(bvh, int, use_bvh_steps)
 KERNEL_STRUCT_MEMBER(bvh, int, curve_subdivisions)
+/* True when the scene contains traceable geometry whose Cycles visibility cannot be represented
+ * by the 8-bit Metal instance mask (its low 8 bits are zero, so the mask is forced to 0xFF and the
+ * intersection function is the only thing culling it). The MetalRT opaque fast path must stay
+ * disabled in that case, since forcing opacity skips that function. */
+KERNEL_STRUCT_MEMBER(bvh, int, have_visibility_masked_geometry)
+/* Pad to a multiple of 16 bytes for consistent cross-device alignment. */
+KERNEL_STRUCT_MEMBER(bvh, int, pad1)
+KERNEL_STRUCT_MEMBER(bvh, int, pad2)
+KERNEL_STRUCT_MEMBER(bvh, int, pad3)
 KERNEL_STRUCT_END(KernelBVH)
 
 /* Film. */

@@ -576,12 +576,9 @@ bool MetalDeviceQueue::enqueue(DeviceKernel kernel,
       }
 
       case DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY:
-        /* Unlike the active-index kernels above, this instantiates
-         * gpu_parallel_sorted_index_array() (parallel_sorted_index.h) -- a different algorithm
-         * that does not use the threadgroup array at all. Left at the pre-existing
-         * (conservative) size rather than reasoned down, since proving it needs 0 bytes is out
-         * of scope for this change. */
-        shared_mem_bytes = (int)round_up((num_threads_per_block + 1) * sizeof(int), 16);
+        /* This instantiates gpu_parallel_sorted_index_array() (parallel_sorted_index.h), which
+         * uses only global atomics and no threadgroup array, so it needs no shared memory. */
+        shared_mem_bytes = 0;
         break;
 
       case DEVICE_KERNEL_INTEGRATOR_SORT_BUCKET_PASS:
@@ -815,7 +812,14 @@ void MetalDeviceQueue::prepare_resources()
 
   std::lock_guard<std::recursive_mutex> lock(metal_device_->metal_mem_map_mutex);
 
-  /* declare resource usage */
+  /* Declare resource usage. Batch buffers by their exact usage flags into a single useResources
+   * call each, to avoid thousands of Objective-C calls on large scenes. Textures keep their
+   * individual declaration since they add MTLResourceUsageSample. */
+  std::vector<id<MTLResource>> read_only_resources;
+  std::vector<id<MTLResource>> read_write_resources;
+  read_only_resources.reserve(metal_device_->metal_mem_map.size());
+  read_write_resources.reserve(metal_device_->metal_mem_map.size());
+
   for (auto &it : metal_device_->metal_mem_map) {
     device_memory *mem = it.first;
 
@@ -825,13 +829,25 @@ void MetalDeviceQueue::prepare_resources()
     }
 
     if (it.second->mtlBuffer) {
-      /* METAL_WIP - use array version (i.e. useResources) */
-      [mtlComputeEncoder_ useResource:it.second->mtlBuffer usage:usage];
+      std::vector<id<MTLResource>> &resources = (usage & MTLResourceUsageWrite) ?
+                                                    read_write_resources :
+                                                    read_only_resources;
+      resources.push_back(it.second->mtlBuffer);
     }
     else if (it.second->mtlTexture) {
-      /* METAL_WIP - use array version (i.e. useResources) */
       [mtlComputeEncoder_ useResource:it.second->mtlTexture usage:usage | MTLResourceUsageSample];
     }
+  }
+
+  if (!read_only_resources.empty()) {
+    [mtlComputeEncoder_ useResources:read_only_resources.data()
+                               count:read_only_resources.size()
+                               usage:MTLResourceUsageRead];
+  }
+  if (!read_write_resources.empty()) {
+    [mtlComputeEncoder_ useResources:read_write_resources.data()
+                               count:read_write_resources.size()
+                               usage:MTLResourceUsageRead | MTLResourceUsageWrite];
   }
 
   /* ancillaries */
