@@ -62,6 +62,7 @@ struct UpdateObjectTransformState {
   bool have_curves;
   bool have_points;
   bool have_volumes;
+  bool have_visibility_masked_geometry;
 
   /* ** Scheduling queue. ** */
   Scene *scene;
@@ -752,6 +753,14 @@ void ObjectManager::device_update_object_transform(UpdateObjectTransformState *s
     state->have_volumes = true;
   }
 
+  /* Geometry whose visibility low 8 bits are zero has its Metal instance mask forced to 0xFF (see
+   * MetalDeviceQueue BLAS build), so the intersection function is the only thing culling it. Flag
+   * it so the MetalRT opaque fast path (which skips that function) stays disabled. Matches the
+   * `visibility_for_tracing() & 0xFF` mask test exactly; conservative (also covers non-traceable). */
+  if ((ob->visibility_for_tracing() & 0xFF) == 0) {
+    state->have_visibility_masked_geometry = true;
+  }
+
   /* Light group. */
   auto it = scene->lightgroups.find(ob->lightgroup);
   if (it != scene->lightgroups.end()) {
@@ -802,6 +811,7 @@ void ObjectManager::device_update_transforms(DeviceScene *dscene, Scene *scene, 
   state.have_curves = false;
   state.have_points = false;
   state.have_volumes = false;
+  state.have_visibility_masked_geometry = false;
   state.scene = scene;
   state.queue_start_object = 0;
 
@@ -874,6 +884,7 @@ void ObjectManager::device_update_transforms(DeviceScene *dscene, Scene *scene, 
   dscene->data.bvh.have_curves = state.have_curves;
   dscene->data.bvh.have_points = state.have_points;
   dscene->data.bvh.have_volumes = state.have_volumes;
+  dscene->data.bvh.have_visibility_masked_geometry = state.have_visibility_masked_geometry;
 
   dscene->objects.clear_modified();
   dscene->object_motion_pass.clear_modified();

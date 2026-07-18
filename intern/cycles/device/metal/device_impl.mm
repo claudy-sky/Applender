@@ -359,6 +359,13 @@ string MetalDevice::preprocess_source(MetalPipelineType pso_type,
     if (use_metalrt_extended_limits) {
       global_defines += "#define __METALRT_EXTENDED_LIMITS__\n";
     }
+
+    /* Allow opaque triangles to skip their intersection function when it has no work to do (see
+     * metalrt_can_force_opaque). Opt-out via CYCLES_METAL_NO_OPAQUE_FASTPATH. */
+    static const bool use_opaque_fast_path = getenv("CYCLES_METAL_NO_OPAQUE_FASTPATH") == nullptr;
+    if (use_opaque_fast_path) {
+      global_defines += "#define __METALRT_OPAQUE_FASTPATH__\n";
+    }
   }
 
 #  ifdef WITH_CYCLES_DEBUG
@@ -449,6 +456,12 @@ void MetalDevice::make_source(MetalPipelineType pso_type, const uint kernel_feat
    * be repeatedly respecialized.
    */
   global_defines_md5[pso_type] = preprocess_source(pso_type, kernel_features, &source);
+
+  /* Precompute the digest of the fully preprocessed source so per-sync pipeline-key hashing does
+   * not re-hash the entire (hundreds of KB) source string every time. */
+  MD5Hash source_md5_hash;
+  source_md5_hash.append(source);
+  source_md5[pso_type] = source_md5_hash.get_hex();
 }
 
 bool MetalDevice::load_kernels(const uint _kernel_features)
@@ -518,7 +531,7 @@ void MetalDevice::refresh_source_and_kernels_md5(MetalPipelineType pso_type)
 
   MD5Hash md5;
   md5.append(constant_values);
-  md5.append(source[pso_type]);
+  md5.append(source_md5[pso_type]);
   if (use_metalrt) {
     md5.append(string_printf("metalrt_features=%d", kernel_features & METALRT_FEATURE_MASK));
   }
