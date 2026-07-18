@@ -29,7 +29,18 @@ template<> float4x4 operator*(const float4x4 &a, const float4x4 &b)
   using namespace math;
   float4x4 result;
 
-#if BLI_HAVE_SSE2
+#if BLI_HAVE_ARM_NEON
+  const float32x4_t A0 = vld1q_f32(a[0]);
+  const float32x4_t A1 = vld1q_f32(a[1]);
+  const float32x4_t A2 = vld1q_f32(a[2]);
+  const float32x4_t A3 = vld1q_f32(a[3]);
+
+  for (int i = 0; i < 4; i++) {
+    const float32x4_t sum01 = vaddq_f32(vmulq_n_f32(A0, b[i][0]), vmulq_n_f32(A1, b[i][1]));
+    const float32x4_t sum23 = vaddq_f32(vmulq_n_f32(A2, b[i][2]), vmulq_n_f32(A3, b[i][3]));
+    vst1q_f32(result[i], vaddq_f32(sum01, sum23));
+  }
+#elif BLI_HAVE_SSE2
   __m128 A0 = _mm_load_ps(a[0]);
   __m128 A1 = _mm_load_ps(a[1]);
   __m128 A2 = _mm_load_ps(a[2]);
@@ -549,28 +560,92 @@ bool is_similarity_transform(const MatBase<T, 3, 3> &matrix, const T &epsilon = 
   return true;
 }
 
+#if BLI_HAVE_ARM_NEON
+
+static_assert(sizeof(float3) == sizeof(float) * 3,
+              "NEON bulk transforms require tightly packed float3 values");
+
+static inline float32x4_t transform_component_neon(const float32x4x3_t &vectors,
+                                                   const float x_scale,
+                                                   const float y_scale,
+                                                   const float z_scale)
+{
+  float32x4_t result = vdupq_n_f32(0.0f);
+  result = vaddq_f32(result, vmulq_n_f32(vectors.val[0], x_scale));
+  result = vaddq_f32(result, vmulq_n_f32(vectors.val[1], y_scale));
+  return vaddq_f32(result, vmulq_n_f32(vectors.val[2], z_scale));
+}
+
+template<typename MatT>
+static inline float32x4x3_t transform_vectors_neon(const float32x4x3_t &vectors,
+                                                   const MatT &transform)
+{
+  float32x4x3_t result;
+  result.val[0] = transform_component_neon(
+      vectors, transform[0][0], transform[1][0], transform[2][0]);
+  result.val[1] = transform_component_neon(
+      vectors, transform[0][1], transform[1][1], transform[2][1]);
+  result.val[2] = transform_component_neon(
+      vectors, transform[0][2], transform[1][2], transform[2][2]);
+  return result;
+}
+
+static inline float32x4x3_t normalize_vectors_neon(float32x4x3_t vectors)
+{
+  float32x4_t length_squared = vmulq_f32(vectors.val[0], vectors.val[0]);
+  length_squared = vaddq_f32(length_squared, vmulq_f32(vectors.val[1], vectors.val[1]));
+  length_squared = vaddq_f32(length_squared, vmulq_f32(vectors.val[2], vectors.val[2]));
+
+  const uint32x4_t valid = vcgtq_f32(length_squared, vdupq_n_f32(1.0e-35f));
+  /* Keep invalid lanes away from the square root and division, matching normalize's zero/NaN
+   * behavior. */
+  const float32x4_t safe_length_squared = vbslq_f32(valid, length_squared, vdupq_n_f32(1.0f));
+  const float32x4_t safe_length = vsqrtq_f32(safe_length_squared);
+  const float32x4_t zero = vdupq_n_f32(0.0f);
+  vectors.val[0] = vbslq_f32(valid, vdivq_f32(vectors.val[0], safe_length), zero);
+  vectors.val[1] = vbslq_f32(valid, vdivq_f32(vectors.val[1], safe_length), zero);
+  vectors.val[2] = vbslq_f32(valid, vdivq_f32(vectors.val[2], safe_length), zero);
+  return vectors;
+}
+
+#endif  // BLI_HAVE_ARM_NEON
+
+static void transform_normals_no_threading(const Span<float3> src,
+                                           const float3x3 &transform,
+                                           MutableSpan<float3> dst,
+                                           const bool normalize_result)
+{
+  int64_t i = 0;
+#if BLI_HAVE_ARM_NEON
+  for (; i + 4 <= src.size(); i += 4) {
+    const float32x4x3_t input = vld3q_f32(reinterpret_cast<const float *>(src.data() + i));
+    float32x4x3_t output = transform_vectors_neon(input, transform);
+    if (normalize_result) {
+      output = normalize_vectors_neon(output);
+    }
+    vst3q_f32(reinterpret_cast<float *>(dst.data() + i), output);
+  }
+#endif
+  for (; i < src.size(); i++) {
+    const float3 transformed = transform * src[i];
+    dst[i] = normalize_result ? math::normalize(transformed) : transformed;
+  }
+}
+
 void transform_normals(const float3x3 &transform, MutableSpan<float3> normals)
 {
   if (math::is_equal(transform, float3x3::identity(), 1e-6f)) {
     return;
   }
-  PRF_scope_with_name("math::transform_points", ProfileCategory::Default);
+  PRF_scope_with_name("math::transform_normals", ProfileCategory::Default);
   const float3x3 normal_transform = math::transpose(math::invert(transform));
-  if (is_similarity_transform(normal_transform)) {
-    const float3x3 normalized_transform = math::normalize(normal_transform);
-    threading::parallel_for(normals.index_range(), 1024, [&](const IndexRange range) {
-      for (float3 &normal : normals.slice(range)) {
-        normal = normalized_transform * normal;
-      }
-    });
-  }
-  else {
-    threading::parallel_for(normals.index_range(), 1024, [&](const IndexRange range) {
-      for (float3 &normal : normals.slice(range)) {
-        normal = math::normalize(normal_transform * normal);
-      }
-    });
-  }
+  const bool normalize_result = !is_similarity_transform(normal_transform);
+  const float3x3 final_transform = normalize_result ? normal_transform :
+                                                      math::normalize(normal_transform);
+  threading::parallel_for(normals.index_range(), 1024, [&](const IndexRange range) {
+    MutableSpan<float3> slice = normals.slice(range);
+    transform_normals_no_threading(slice, final_transform, slice, normalize_result);
+  });
 }
 
 void transform_normals(Span<float3> src, const float3x3 &transform, MutableSpan<float3> dst)
@@ -579,23 +654,15 @@ void transform_normals(Span<float3> src, const float3x3 &transform, MutableSpan<
     dst.copy_from(src);
     return;
   }
-  PRF_scope_with_name("math::transform_points", ProfileCategory::Default);
+  PRF_scope_with_name("math::transform_normals", ProfileCategory::Default);
   const float3x3 normal_transform = math::transpose(math::invert(transform));
-  if (is_similarity_transform(normal_transform)) {
-    const float3x3 normalized_transform = math::normalize(normal_transform);
-    threading::parallel_for(src.index_range(), 1024, [&](const IndexRange range) {
-      for (const int i : range) {
-        dst[i] = normalized_transform * src[i];
-      }
-    });
-  }
-  else {
-    threading::parallel_for(src.index_range(), 1024, [&](const IndexRange range) {
-      for (const int i : range) {
-        dst[i] = math::normalize(normal_transform * src[i]);
-      }
-    });
-  }
+  const bool normalize_result = !is_similarity_transform(normal_transform);
+  const float3x3 final_transform = normalize_result ? normal_transform :
+                                                      math::normalize(normal_transform);
+  threading::parallel_for(src.index_range(), 1024, [&](const IndexRange range) {
+    transform_normals_no_threading(
+        src.slice(range), final_transform, dst.slice(range), normalize_result);
+  });
 }
 
 static bool skip_transform(const float4x4 &transform)
@@ -608,7 +675,18 @@ static void transform_points_no_threading(const Span<float3> src,
                                           MutableSpan<float3> dst)
 {
   PRF_scope_with_name("math::transform_points", ProfileCategory::Default);
-  for (const int64_t i : src.index_range()) {
+  int64_t i = 0;
+#if BLI_HAVE_ARM_NEON
+  for (; i + 4 <= src.size(); i += 4) {
+    const float32x4x3_t input = vld3q_f32(reinterpret_cast<const float *>(src.data() + i));
+    float32x4x3_t output = transform_vectors_neon(input, transform);
+    output.val[0] = vaddq_f32(output.val[0], vdupq_n_f32(transform[3][0]));
+    output.val[1] = vaddq_f32(output.val[1], vdupq_n_f32(transform[3][1]));
+    output.val[2] = vaddq_f32(output.val[2], vdupq_n_f32(transform[3][2]));
+    vst3q_f32(reinterpret_cast<float *>(dst.data() + i), output);
+  }
+#endif
+  for (; i < src.size(); i++) {
     dst[i] = math::transform_point(transform, src[i]);
   }
 }
@@ -633,14 +711,6 @@ void transform_points(const Span<float3> src,
   }
 }
 
-static void transform_points_no_threading(const float4x4 &transform, MutableSpan<float3> points)
-{
-  PRF_scope_with_name("math::transform_points", ProfileCategory::Default);
-  for (float3 &position : points) {
-    position = math::transform_point(transform, position);
-  }
-}
-
 void transform_points(const float4x4 &transform,
                       MutableSpan<float3> points,
                       const bool use_threading)
@@ -650,11 +720,12 @@ void transform_points(const float4x4 &transform,
   }
   if (use_threading) {
     threading::parallel_for(points.index_range(), 1024, [&](const IndexRange range) {
-      transform_points_no_threading(transform, points.slice(range));
+      MutableSpan<float3> slice = points.slice(range);
+      transform_points_no_threading(slice, transform, slice);
     });
   }
   else {
-    transform_points_no_threading(transform, points);
+    transform_points_no_threading(points, transform, points);
   }
 }
 

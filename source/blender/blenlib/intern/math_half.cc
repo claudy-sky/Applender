@@ -32,9 +32,8 @@ namespace blender {
 uint16_t math::float_to_half(float v)
 {
 #if defined(USE_HARDWARE_FP16_NEON)
-  float16x4_t h4 = vcvt_f16_f32(vdupq_n_f32(v));
-  float16_t h = vget_lane_f16(h4, 0);
-  return *reinterpret_cast<uint16_t *>(&h);
+  const float16x4_t h4 = vcvt_f16_f32(vdupq_n_f32(v));
+  return vget_lane_u16(vreinterpret_u16_f16(h4), 0);
 #else
   /* Based on float_to_half_fast3_rtne from public domain https://gist.github.com/rygorous/2156668
    * see corresponding blog post https://fgiesen.wordpress.com/2012/03/28/half-to-float-done-quic/
@@ -240,6 +239,42 @@ static inline __m128 F16_to_F32_4x(const __m128i &h)
 
 #endif  // USE_SSE2_FP16
 
+#ifdef USE_HARDWARE_FP16_NEON
+
+static inline uint16x8_t float_to_half_8x_neon(const float *src)
+{
+  const float16x4_t low = vcvt_f16_f32(vld1q_f32(src));
+  const float16x8_t result = vcvt_high_f16_f32(low, vld1q_f32(src + 4));
+  return vreinterpretq_u16_f16(result);
+}
+
+static inline float32x4_t clear_nan_and_clamp_neon(const float32x4_t values,
+                                                   const float32x4_t min_value,
+                                                   const float32x4_t max_value)
+{
+  const uint32x4_t not_nan = vceqq_f32(values, values);
+  const float32x4_t no_nan = vreinterpretq_f32_u32(
+      vandq_u32(vreinterpretq_u32_f32(values), not_nan));
+  return vminq_f32(vmaxq_f32(no_nan, min_value), max_value);
+}
+
+static inline uint16x8_t make_half_finite_neon(uint16x8_t values)
+{
+  const uint16x8_t exp_mask = vdupq_n_u16(0x7c00u);
+  const uint16x8_t exp_all_ones = vceqq_u16(vandq_u16(values, exp_mask), exp_mask);
+  const uint16x8_t mant_mask = vdupq_n_u16(0x03ffu);
+  const uint16x8_t zero = vdupq_n_u16(0);
+  const uint16x8_t mant_is_zero = vceqq_u16(vandq_u16(values, mant_mask), zero);
+  const uint16x8_t is_inf = vandq_u16(exp_all_ones, mant_is_zero);
+  const uint16x8_t is_nan = vandq_u16(exp_all_ones, vmvnq_u16(mant_is_zero));
+  const uint16x8_t sign_bits = vandq_u16(values, vdupq_n_u16(0x8000u));
+  const uint16x8_t finite_max = vorrq_u16(sign_bits, vdupq_n_u16(0x7bffu));
+  values = vbslq_u16(is_inf, finite_max, values);
+  return vbslq_u16(is_nan, sign_bits, values);
+}
+
+#endif  // USE_HARDWARE_FP16_NEON
+
 void math::float_to_half_array(const float *src, uint16_t *dst, size_t length)
 {
   size_t i = 0;
@@ -260,13 +295,11 @@ void math::float_to_half_array(const float *src, uint16_t *dst, size_t length)
     src += 4;
     dst += 4;
   }
-#elif defined(USE_HARDWARE_FP16_NEON) /* 4-wide loop using NEON */
-  for (; i + 3 < length; i += 4) {
-    float32x4_t src4 = vld1q_f32(src);
-    float16x4_t h4 = vcvt_f16_f32(src4);
-    vst1_f16((float16_t *)dst, h4);
-    src += 4;
-    dst += 4;
+#elif defined(USE_HARDWARE_FP16_NEON) /* 8-wide loop using two NEON vectors */
+  for (; i + 7 < length; i += 8) {
+    vst1q_u16(dst, float_to_half_8x_neon(src));
+    src += 8;
+    dst += 8;
   }
 #endif
   /* Use scalar path to convert the tail of array (or whole array if none of
@@ -313,19 +346,16 @@ void math::float_to_half_clamp_array(
     src += 4;
     dst += 4;
   }
-#elif defined(USE_HARDWARE_FP16_NEON)                 /* 4-wide loop using NEON */
-  float32x4_t min4 = vdupq_n_f32(min_value);
-  float32x4_t max4 = vdupq_n_f32(max_value);
-  for (; i + 3 < length; i += 4) {
-    float32x4_t src4 = vld1q_f32(src);
-    /* Turn NaNs into zeroes. */
-    uint32x4_t not_nans_mask = vceqq_f32(src4, src4);
-    src4 = vreinterpretq_f32_u32(vandq_u32(vreinterpretq_u32_f32(src4), not_nans_mask));
-    src4 = vminq_f32(vmaxq_f32(src4, min4), max4);
-    float16x4_t h4 = vcvt_f16_f32(src4);
-    vst1_f16((float16_t *)dst, h4);
-    src += 4;
-    dst += 4;
+#elif defined(USE_HARDWARE_FP16_NEON)                 /* 8-wide loop using two NEON vectors */
+  const float32x4_t min4 = vdupq_n_f32(min_value);
+  const float32x4_t max4 = vdupq_n_f32(max_value);
+  for (; i + 7 < length; i += 8) {
+    const float32x4_t low = clear_nan_and_clamp_neon(vld1q_f32(src), min4, max4);
+    const float32x4_t high = clear_nan_and_clamp_neon(vld1q_f32(src + 4), min4, max4);
+    const float16x4_t half_low = vcvt_f16_f32(low);
+    vst1q_u16(dst, vreinterpretq_u16_f16(vcvt_high_f16_f32(half_low, high)));
+    src += 8;
+    dst += 8;
   }
 #endif
   /* Use scalar path to convert the tail of array (or whole array if none of
@@ -398,32 +428,11 @@ void math::float_to_half_make_finite_array(const float *src, uint16_t *dst, size
     src += 4;
     dst += 4;
   }
-#elif defined(USE_HARDWARE_FP16_NEON)                 /* 4-wide loop using NEON */
-  for (; i + 3 < length; i += 4) {
-    float32x4_t src4 = vld1q_f32(src);
-    float16x4_t h4 = vcvt_f16_f32(src4);
-    /* Handle inf/nan. */
-    {
-      uint16x4_t hu4 = vreinterpret_u16_f16(h4);
-      const uint16x4_t exp_mask = vdup_n_u16(0x7c00u);
-      uint16x4_t exp_all_ones = vceq_u16(vand_u16(hu4, exp_mask), exp_mask);
-      const uint16x4_t mant_mask = vdup_n_u16(0x03ffu);
-      const uint16x4_t zero = vdup_n_u16(0);
-      uint16x4_t mant_is_zero = vceq_u16(vand_u16(hu4, mant_mask), zero);
-      uint16x4_t is_inf = vand_u16(exp_all_ones, mant_is_zero);
-      uint16x4_t is_nan = vand_u16(exp_all_ones, vmvn_u16(mant_is_zero));
-      const uint16x4_t sign_mask = vdup_n_u16(0x8000u);
-      uint16x4_t signbits = vand_u16(hu4, sign_mask);
-      uint16x4_t inf_res = vorr_u16(signbits, vdup_n_u16(0x7bffu)); /* +/- 65504 */
-      uint16x4_t nan_res = signbits;                                /* +/- 0 */
-      /* Select final result. */
-      hu4 = vbsl_u16(is_inf, inf_res, hu4);
-      hu4 = vbsl_u16(is_nan, nan_res, hu4);
-      h4 = vreinterpret_f16_u16(hu4);
-    }
-    vst1_f16((float16_t *)dst, h4);
-    src += 4;
-    dst += 4;
+#elif defined(USE_HARDWARE_FP16_NEON)                 /* 8-wide loop using two NEON vectors */
+  for (; i + 7 < length; i += 8) {
+    vst1q_u16(dst, make_half_finite_neon(float_to_half_8x_neon(src)));
+    src += 8;
+    dst += 8;
   }
 #endif
   /* Use scalar path to convert the tail of array (or whole array if none of
@@ -453,13 +462,16 @@ void math::half_to_float_array(const uint16_t *src, float *dst, size_t length)
     src += 4;
     dst += 4;
   }
-#elif defined(USE_HARDWARE_FP16_NEON) /* 4-wide loop using NEON */
-  for (; i + 3 < length; i += 4) {
-    float16x4_t src4 = vld1_f16((const float16_t *)src);
-    float32x4_t f4 = vcvt_f32_f16(src4);
-    vst1q_f32(dst, f4);
-    src += 4;
-    dst += 4;
+#elif defined(USE_HARDWARE_FP16_NEON) /* 8-wide loop using two NEON vectors */
+  for (; i + 7 < length; i += 8) {
+    const uint16x8_t src8 = vld1q_u16(src);
+    const float16x8_t half = vreinterpretq_f16_u16(src8);
+    const float32x4_t low = vcvt_f32_f16(vget_low_f16(half));
+    const float32x4_t high = vcvt_high_f32_f16(half);
+    vst1q_f32(dst, low);
+    vst1q_f32(dst + 4, high);
+    src += 8;
+    dst += 8;
   }
 #endif
   /* Use scalar path to convert the tail of array (or whole array if none of

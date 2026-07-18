@@ -499,7 +499,135 @@ float linearrgb_to_srgb(float c)
 }
 
 /* SIMD code path, with pow 2.4 and 1/2.4 approximations. */
-#if BLI_HAVE_SSE2
+#if BLI_HAVE_ARM_NEON
+
+MALWAYS_INLINE float32x4_t _bli_math_fastpow_neon(const int exp,
+                                                  const int e2coeff,
+                                                  const float32x4_t arg)
+{
+  float32x4_t result = vmulq_f32(arg, vreinterpretq_f32_s32(vdupq_n_s32(e2coeff)));
+  result = vcvtq_f32_s32(vreinterpretq_s32_f32(result));
+  result = vmulq_f32(result, vreinterpretq_f32_s32(vdupq_n_s32(exp)));
+  return vreinterpretq_f32_s32(vcvtnq_s32_f32(result));
+}
+
+MALWAYS_INLINE float32x4_t _bli_math_improve_5throot_solution_neon(const float32x4_t old_result,
+                                                                   const float32x4_t x)
+{
+  const float32x4_t approx2 = vmulq_f32(old_result, old_result);
+  const float32x4_t approx4 = vmulq_f32(approx2, approx2);
+  const float32x4_t quotient = vdivq_f32(x, approx4);
+  const float32x4_t sum = vaddq_f32(vmulq_n_f32(old_result, 4.0f), quotient);
+  return vmulq_n_f32(sum, 1.0f / 5.0f);
+}
+
+MALWAYS_INLINE float32x4_t _bli_math_fastpow24_neon(const float32x4_t arg)
+{
+  float32x4_t x = _bli_math_fastpow_neon(0x3F4CCCCD, 0x4F55A7FB, arg);
+  const float32x4_t arg2 = vmulq_f32(arg, arg);
+  const float32x4_t arg4 = vmulq_f32(arg2, arg2);
+  x = _bli_math_improve_5throot_solution_neon(x, arg4);
+  x = _bli_math_improve_5throot_solution_neon(x, arg4);
+  x = _bli_math_improve_5throot_solution_neon(x, arg4);
+  return vmulq_f32(x, vmulq_f32(x, x));
+}
+
+MALWAYS_INLINE float32x4_t _bli_math_rsqrt_neon(const float32x4_t value)
+{
+  float32x4_t result = vrsqrteq_f32(value);
+  result = vmulq_f32(result, vrsqrtsq_f32(vmulq_f32(value, result), result));
+  result = vmulq_f32(result, vrsqrtsq_f32(vmulq_f32(value, result), result));
+  return result;
+}
+
+MALWAYS_INLINE float32x4_t _bli_math_fastpow512_neon(const float32x4_t arg)
+{
+  const float32x4_t xf = _bli_math_fastpow_neon(0x3f2aaaab, 0x5eb504f3, arg);
+  const float32x4_t xover = vmulq_f32(arg, xf);
+  const float32x4_t xfm1 = _bli_math_rsqrt_neon(xf);
+  const float32x4_t x2 = vmulq_f32(arg, arg);
+  const float32x4_t xunder = vmulq_f32(x2, xfm1);
+  float32x4_t xavg = vmulq_n_f32(vaddq_f32(xover, xunder),
+                                 1.0f / (3.0f * 0.629960524947437f) * 0.999852f);
+  xavg = vmulq_f32(xavg, _bli_math_rsqrt_neon(xavg));
+  xavg = vmulq_f32(xavg, _bli_math_rsqrt_neon(xavg));
+  return xavg;
+}
+
+MALWAYS_INLINE float32x4_t srgb_to_linearrgb_v4_neon(const float32x4_t color)
+{
+  const uint32x4_t use_linear = vcltq_f32(color, vdupq_n_f32(0.04045f));
+  const float32x4_t linear = vmaxq_f32(vmulq_n_f32(color, 1.0f / 12.92f), vdupq_n_f32(0.0f));
+  const float32x4_t power_base = vmulq_n_f32(vaddq_f32(color, vdupq_n_f32(0.055f)), 1.0f / 1.055f);
+  const float32x4_t power = _bli_math_fastpow24_neon(power_base);
+  return vbslq_f32(use_linear, linear, power);
+}
+
+MALWAYS_INLINE float32x4_t linearrgb_to_srgb_v4_neon(const float32x4_t color)
+{
+  const uint32x4_t use_linear = vcltq_f32(color, vdupq_n_f32(0.0031308f));
+  const float32x4_t linear = vmaxq_f32(vmulq_n_f32(color, 12.92f), vdupq_n_f32(0.0f));
+  const float32x4_t power = vaddq_f32(vmulq_n_f32(_bli_math_fastpow512_neon(color), 1.055f),
+                                      vdupq_n_f32(-0.055f));
+  return vbslq_f32(use_linear, linear, power);
+}
+
+void srgb_to_linearrgb_v3_v3(float linear[3], const float srgb[3])
+{
+  const float input[4] = {srgb[0], srgb[1], srgb[2], 1.0f};
+  float output[4];
+  vst1q_f32(output, srgb_to_linearrgb_v4_neon(vld1q_f32(input)));
+  memcpy(linear, output, sizeof(float[3]));
+}
+
+void linearrgb_to_srgb_v3_v3(float srgb[3], const float linear[3])
+{
+  const float input[4] = {linear[0], linear[1], linear[2], 1.0f};
+  float output[4];
+  vst1q_f32(output, linearrgb_to_srgb_v4_neon(vld1q_f32(input)));
+  memcpy(srgb, output, sizeof(float[3]));
+}
+
+MALWAYS_INLINE uint32x4_t _bli_float_to_uchar_neon(const float32x4_t value)
+{
+  /* Numeric min/max matches SSE's behavior for NaN: the conversion produces transparent black. */
+  const float32x4_t clamped = vminnmq_f32(vmaxnmq_f32(value, vdupq_n_f32(0.0f)),
+                                          vdupq_n_f32(1.0f));
+  const float32x4_t scaled = vaddq_f32(vmulq_n_f32(clamped, 255.0f), vdupq_n_f32(0.5f));
+  return vcvtq_u32_f32(scaled);
+}
+
+/** Convert four interleaved RGBA float pixels to four packed RGBA8 pixels. */
+MALWAYS_INLINE uint32x4_t linearrgb_to_srgb_uchar4_block_neon(const float (*linear)[4],
+                                                              const float (*matrix)[3])
+{
+  float32x4x4_t channels = vld4q_f32(&linear[0][0]);
+
+  if (matrix) {
+    const float32x4_t red = channels.val[0];
+    const float32x4_t green = channels.val[1];
+    const float32x4_t blue = channels.val[2];
+    channels.val[0] = vaddq_f32(
+        vaddq_f32(vmulq_n_f32(red, matrix[0][0]), vmulq_n_f32(green, matrix[1][0])),
+        vmulq_n_f32(blue, matrix[2][0]));
+    channels.val[1] = vaddq_f32(
+        vaddq_f32(vmulq_n_f32(red, matrix[0][1]), vmulq_n_f32(green, matrix[1][1])),
+        vmulq_n_f32(blue, matrix[2][1]));
+    channels.val[2] = vaddq_f32(
+        vaddq_f32(vmulq_n_f32(red, matrix[0][2]), vmulq_n_f32(green, matrix[1][2])),
+        vmulq_n_f32(blue, matrix[2][2]));
+  }
+
+  const uint32x4_t red = _bli_float_to_uchar_neon(linearrgb_to_srgb_v4_neon(channels.val[0]));
+  const uint32x4_t green = _bli_float_to_uchar_neon(linearrgb_to_srgb_v4_neon(channels.val[1]));
+  const uint32x4_t blue = _bli_float_to_uchar_neon(linearrgb_to_srgb_v4_neon(channels.val[2]));
+  const uint32x4_t alpha = _bli_float_to_uchar_neon(channels.val[3]);
+
+  return vorrq_u32(vorrq_u32(red, vshlq_n_u32(green, 8)),
+                   vorrq_u32(vshlq_n_u32(blue, 16), vshlq_n_u32(alpha, 24)));
+}
+
+#elif BLI_HAVE_SSE2
 
 /**
  * Calculate initial guess for `arg^exp` based on float representation
@@ -512,24 +640,13 @@ float linearrgb_to_srgb(float c)
  * We hope that exp and e2coeff gets properly inlined.
  */
 
-/** Fast version of _mm_cvtps_epi32 for arm64, as sse2neon must set the rounding
- * mode each time while we can assume it is already set to nearest for Blender. */
-MALWAYS_INLINE __m128i _bli_float_to_int_nearest(const __m128 a)
-{
-#  if BLI_HAVE_ARM_NEON
-  return vreinterpretq_m128i_s32(vcvtnq_s32_f32(a));
-#  else
-  return _mm_cvtps_epi32(a);
-#  endif
-}
-
 MALWAYS_INLINE __m128 _bli_math_fastpow(const int exp, const int e2coeff, const __m128 arg)
 {
   __m128 ret;
   ret = _mm_mul_ps(arg, _mm_castsi128_ps(_mm_set1_epi32(e2coeff)));
   ret = _mm_cvtepi32_ps(_mm_castps_si128(ret));
   ret = _mm_mul_ps(ret, _mm_castsi128_ps(_mm_set1_epi32(exp)));
-  ret = _mm_castsi128_ps(_bli_float_to_int_nearest(ret));
+  ret = _mm_castsi128_ps(_mm_cvtps_epi32(ret));
   return ret;
 }
 
@@ -570,14 +687,9 @@ MALWAYS_INLINE __m128 _bli_math_fastpow24(const __m128 arg)
 MALWAYS_INLINE __m128 _bli_math_rsqrt(__m128 in)
 {
   __m128 r = _mm_rsqrt_ps(in);
-  /* Only do additional Newton-Raphson iterations when using actual SSE
-   * code path. When we are emulating SSE on NEON via sse2neon, the
-   * additional NR iterations are already done inside _mm_rsqrt_ps
-   * emulation. */
-#  if defined(__SSE2__)
+  /* Improve the hardware estimate with one Newton-Raphson iteration. */
   r = _mm_add_ps(_mm_mul_ps(_mm_set1_ps(1.5f), r),
                  _mm_mul_ps(_mm_mul_ps(_mm_mul_ps(in, _mm_set1_ps(-0.5f)), r), _mm_mul_ps(r, r)));
-#  endif
   return r;
 }
 
@@ -697,7 +809,7 @@ MALWAYS_INLINE __m128i linearrgb_to_srgb_uchar4_block(const float (*linear)[4],
   return _mm_packus_epi16(lo, hi);
 }
 
-#else /* BLI_HAVE_SSE2 */
+#else /* No SIMD. */
 
 /* Non-SIMD code path, with the same pow approximations as SIMD one. */
 
@@ -794,14 +906,29 @@ void linearrgb_to_srgb_v3_v3(float srgb[3], const float linear[3])
   srgb[2] = linearrgb_to_srgb_approx(linear[2]);
 }
 
-#endif /* BLI_HAVE_SSE2 */
+#endif /* SIMD implementation. */
 
 void linearrgb_to_srgb_uchar4_n(uchar (*__restrict srgb)[4],
                                 const float (*__restrict linear)[4],
                                 const int size,
                                 const float (*__restrict matrix)[3])
 {
-#if BLI_HAVE_SSE2
+#if BLI_HAVE_ARM_NEON
+  if (size >= 4) {
+    int i = 0;
+    for (; i + 4 <= size; i += 4) {
+      const uint32x4_t pixels = linearrgb_to_srgb_uchar4_block_neon(&linear[i], matrix);
+      vst1q_u8(reinterpret_cast<uint8_t *>(srgb[i]), vreinterpretq_u8_u32(pixels));
+    }
+    /* Reprocess the final four pixels to keep the hot loop branch-free. */
+    if (i < size) {
+      const int remainder = size - 4;
+      const uint32x4_t pixels = linearrgb_to_srgb_uchar4_block_neon(&linear[remainder], matrix);
+      vst1q_u8(reinterpret_cast<uint8_t *>(srgb[remainder]), vreinterpretq_u8_u32(pixels));
+    }
+    return;
+  }
+#elif BLI_HAVE_SSE2
   if (size >= 4) {
     /* Process 4 pixels per SIMD operation. */
     int i = 0;

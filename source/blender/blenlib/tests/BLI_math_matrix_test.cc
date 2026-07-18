@@ -2,6 +2,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
+#include <array>
+
 #include "testing/testing.h"
 
 #include "BLI_array.hh"
@@ -142,6 +144,45 @@ TEST(math_matrix, mul_m4_series)
       {0.0f, 0.0f, 0.0f, 343.0f},
   };
   EXPECT_M4_NEAR(matrix, expect, 1e-5);
+}
+
+TEST(math_matrix, MulM4M4M4SIMDAndAliasing)
+{
+  const float matrix_a[4][4] = {
+      {1.25f, -0.5f, 3.0f, 0.125f},
+      {2.0f, 0.75f, -1.0f, 4.0f},
+      {-2.5f, 1.5f, 0.25f, -0.75f},
+      {0.5f, 2.25f, -3.5f, 1.0f},
+  };
+  const float matrix_b[4][4] = {
+      {-1.0f, 0.25f, 2.0f, 1.5f},
+      {3.0f, -2.0f, 0.5f, 0.25f},
+      {0.75f, 1.25f, -1.5f, 2.0f},
+      {2.5f, -0.125f, 0.625f, -0.5f},
+  };
+
+  float expected[4][4] = {};
+  for (int row = 0; row < 4; row++) {
+    for (int column = 0; column < 4; column++) {
+      for (int k = 0; k < 4; k++) {
+        expected[row][column] += matrix_b[row][k] * matrix_a[k][column];
+      }
+    }
+  }
+
+  float result[4][4];
+  mul_m4_m4m4(result, matrix_a, matrix_b);
+  EXPECT_M4_NEAR(result, expected, 1e-6f);
+
+  float alias_a[4][4];
+  copy_m4_m4(alias_a, matrix_a);
+  mul_m4_m4m4(alias_a, alias_a, matrix_b);
+  EXPECT_M4_NEAR(alias_a, expected, 1e-6f);
+
+  float alias_b[4][4];
+  copy_m4_m4(alias_b, matrix_b);
+  mul_m4_m4m4(alias_b, matrix_a, alias_b);
+  EXPECT_M4_NEAR(alias_b, expected, 1e-6f);
 }
 
 TEST(math_matrix, MatrixInverse)
@@ -633,9 +674,13 @@ static void transform_normals_test(const float3x3 &transform, const Span<float3>
 {
   Array<float3, 10> transformed_normals(normals.size());
   transform_normals(normals, transform, transformed_normals);
+  Array<float3, 10> in_place_normals(normals.size());
+  in_place_normals.as_mutable_span().copy_from(normals);
+  transform_normals(transform, in_place_normals);
   /* Input unit vectors should still be unit length. */
   for (const int64_t i : transformed_normals.index_range()) {
     EXPECT_NEAR(math::length(transformed_normals[i]), 1.0f, 1e-6f);
+    EXPECT_V3_NEAR(in_place_normals[i], transformed_normals[i], 1e-6f);
   }
   /* Make sure any optimization inside #transform_normals that skips the final vector normalization
    * doesn't change the result. */
@@ -666,6 +711,58 @@ TEST(math_matrix, TransformNormals)
                          normals);
   transform_normals_test(
       from_rot_scale<float3x3>(EulerXYZ(0.0f, 7.1f, 3.14f), float3(0.5f, 1.5f, 5.7f)), normals);
+}
+
+TEST(math_matrix, TransformDegenerateNormals)
+{
+  const std::array<float3, 8> normals = {
+      float3(0.0f),
+      float3(1.0e-20f, 0.0f, 0.0f),
+      float3(0.0f, -1.0e-20f, 0.0f),
+      float3(0.0f, 0.0f, 1.0e-20f),
+      float3(1.0f, 0.0f, 0.0f),
+      float3(0.0f, -1.0f, 0.0f),
+      float3(0.0f, 0.0f, 1.0f),
+      math::normalize(float3(1.0f, -2.0f, 3.0f)),
+  };
+  const float3x3 transform = from_scale<float3x3>(float3(0.5f, 1.5f, 5.7f));
+  const float3x3 normal_transform = math::transpose(math::invert(transform));
+
+  std::array<float3, 8> result;
+  transform_normals(normals, transform, result);
+  for (const int i : IndexRange(normals.size())) {
+    EXPECT_V3_NEAR(result[i], math::normalize(normal_transform * normals[i]), 1e-6f);
+  }
+}
+
+TEST(math_matrix, TransformPoints)
+{
+  Array<float3, 16> src_storage(13);
+  for (const int64_t i : src_storage.index_range()) {
+    src_storage[i] = float3(
+        float(i) * 0.75f - 2.0f, float(i * i) * 0.125f + 0.5f, float(i % 4) * -1.25f + 3.0f);
+  }
+  const Span<float3> src = src_storage.as_span().slice(1, 11);
+
+  float4x4 transform = float4x4::identity();
+  transform[0] = float4(1.5f, -0.25f, 0.125f, 0.0f);
+  transform[1] = float4(0.5f, 0.75f, -0.375f, 0.0f);
+  transform[2] = float4(-0.125f, 0.625f, 2.0f, 0.0f);
+  transform[3] = float4(3.0f, -4.0f, 1.25f, 1.0f);
+
+  Array<float3, 16> dst_storage(13);
+  MutableSpan<float3> dst = dst_storage.as_mutable_span().slice(1, 11);
+  transform_points(src, transform, dst, false);
+  for (const int64_t i : src.index_range()) {
+    EXPECT_V3_NEAR(dst[i], math::transform_point(transform, src[i]), 1e-6f);
+  }
+
+  Array<float3, 16> in_place(src.size());
+  in_place.as_mutable_span().copy_from(src);
+  transform_points(transform, in_place, false);
+  for (const int64_t i : src.index_range()) {
+    EXPECT_V3_NEAR(in_place[i], dst[i], 1e-6f);
+  }
 }
 
 }  // namespace blender::tests

@@ -354,7 +354,15 @@ BLI_INLINE void interpolate_bilinear_wrapmode_fl(const float *buffer,
     output[2] = ma_mb * row1[2] + a_mb * row3[2] + ma_b * row2[2] + a_b * row4[2];
   }
   else {
-#if BLI_HAVE_SSE2
+#if BLI_HAVE_ARM_NEON
+    const float32x4_t rgba1 = vmulq_n_f32(vld1q_f32(row1), ma_mb);
+    const float32x4_t rgba2 = vmulq_n_f32(vld1q_f32(row2), ma_b);
+    const float32x4_t rgba3 = vmulq_n_f32(vld1q_f32(row3), a_mb);
+    const float32x4_t rgba4 = vmulq_n_f32(vld1q_f32(row4), a_b);
+    const float32x4_t rgba13 = vaddq_f32(rgba1, rgba3);
+    const float32x4_t rgba24 = vaddq_f32(rgba2, rgba4);
+    vst1q_f32(output, vaddq_f32(rgba13, rgba24));
+#elif BLI_HAVE_SSE2
     __m128 rgba1 = _mm_loadu_ps(row1);
     __m128 rgba2 = _mm_loadu_ps(row2);
     __m128 rgba3 = _mm_loadu_ps(row3);

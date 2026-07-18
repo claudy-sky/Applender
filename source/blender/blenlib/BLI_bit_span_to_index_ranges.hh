@@ -105,8 +105,29 @@ inline void bits_to_index_ranges(const BitSpan bits, IndexRangesBuilder<IntT> &b
     const int64_t ints_to_check = ranges.aligned.size() / BitsPerInt;
     int64_t int_i = 0;
 
-/* Checking for chunks of 0 bits can be speedup using intrinsics quite significantly. */
-#if BLI_HAVE_SSE4
+/* Checking chunks for all-zero bits avoids entering the range decoder for sparse masks. */
+#if BLI_HAVE_ARM_NEON
+    for (; int_i + 3 < ints_to_check; int_i += 4) {
+      /* Unroll two 128-bit loads so sparse index masks need half as many loop branches. */
+      const uint64x2_t group_01 = vld1q_u64(start + int_i);
+      const uint64x2_t group_23 = vld1q_u64(start + int_i + 2);
+
+      /* AArch64 has no 64-bit-element horizontal max (UMAXV lacks a .2D form, so vmaxvq_u64 does
+       * not exist); reduce over 32-bit lanes instead. Non-zero iff any bit in the group is set. */
+      if (vmaxvq_u32(vreinterpretq_u32_u64(group_01)) != 0) {
+        for (int j = 0; j < 2; j++) {
+          process_bit_int(
+              start[int_i + j], 0, BitsPerInt, ranges.prefix.size() + (int_i + j) * BitsPerInt);
+        }
+      }
+      if (vmaxvq_u32(vreinterpretq_u32_u64(group_23)) != 0) {
+        for (int j = 2; j < 4; j++) {
+          process_bit_int(
+              start[int_i + j], 0, BitsPerInt, ranges.prefix.size() + (int_i + j) * BitsPerInt);
+        }
+      }
+    }
+#elif BLI_HAVE_SSE4
     for (; int_i + 1 < ints_to_check; int_i += 2) {
       /* Loads the next 128 bit. */
       const __m128i group = _mm_loadu_si128(reinterpret_cast<const __m128i *>(start + int_i));

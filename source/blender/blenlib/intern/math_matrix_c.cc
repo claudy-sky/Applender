@@ -224,7 +224,20 @@ void mul_m4_m4m4(float R[4][4], const float A[4][4], const float B[4][4])
   }
 
   /* Matrix product: `R[j][k] = B[j][i] . A[i][k]`. */
-#if BLI_HAVE_SSE2
+#if BLI_HAVE_ARM_NEON
+  const float32x4_t A0 = vld1q_f32(A[0]);
+  const float32x4_t A1 = vld1q_f32(A[1]);
+  const float32x4_t A2 = vld1q_f32(A[2]);
+  const float32x4_t A3 = vld1q_f32(A[3]);
+
+  for (int i = 0; i < 4; i++) {
+    /* Keep the same pairwise summation order as the SSE path. Do not use FMA here: matrix
+     * multiplication is used by code that relies on Blender's strict floating-point contract. */
+    const float32x4_t sum01 = vaddq_f32(vmulq_n_f32(A0, B[i][0]), vmulq_n_f32(A1, B[i][1]));
+    const float32x4_t sum23 = vaddq_f32(vmulq_n_f32(A2, B[i][2]), vmulq_n_f32(A3, B[i][3]));
+    vst1q_f32(R[i], vaddq_f32(sum01, sum23));
+  }
+#elif BLI_HAVE_SSE2
   __m128 A0 = _mm_loadu_ps(A[0]);
   __m128 A1 = _mm_loadu_ps(A[1]);
   __m128 A2 = _mm_loadu_ps(A[2]);

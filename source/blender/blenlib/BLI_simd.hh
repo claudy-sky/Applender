@@ -10,8 +10,14 @@
  * SIMD instruction support.
  */
 
-#if (defined(__ARM_NEON) || (defined(_M_ARM64) && defined(_MSC_VER))) && \
-    defined(WITH_SSE2NEON) && !defined(DISABLE_SSE2NEON)
+#if defined(__ARM_NEON) || (defined(_M_ARM64) && defined(_MSC_VER))
+#  include <arm_neon.h>
+#  define BLI_HAVE_ARM_NEON 1
+#else
+#  define BLI_HAVE_ARM_NEON 0
+#endif
+
+#if BLI_HAVE_ARM_NEON && defined(WITH_SSE2NEON) && !defined(DISABLE_SSE2NEON)
 /* SSE/SSE2 emulation on ARM Neon. Match SSE precision. */
 #  if !defined(SSE2NEON_PRECISE_MINMAX)
 #    define SSE2NEON_PRECISE_MINMAX 1
@@ -24,19 +30,15 @@
 #  endif
 #  include <sse2neon.h>
 #  define BLI_HAVE_SSE2 1
-#  define BLI_HAVE_ARM_NEON 1
 #elif defined(__SSE2__)
 /* Native SSE2 on Intel/AMD. */
 #  include <emmintrin.h>
 #  define BLI_HAVE_SSE2 1
-#  define BLI_HAVE_ARM_NEON 0
 #else
 #  define BLI_HAVE_SSE2 0
-#  define BLI_HAVE_ARM_NEON 0
 #endif
 
-#if (defined(__ARM_NEON) || (defined(_M_ARM64) && defined(_MSC_VER))) && \
-    defined(WITH_SSE2NEON) && !defined(DISABLE_SSE2NEON)
+#if BLI_HAVE_ARM_NEON && defined(WITH_SSE2NEON) && !defined(DISABLE_SSE2NEON)
 /* SSE4 is emulated via sse2neon. */
 #  define BLI_HAVE_SSE4 1
 #elif defined(__SSE4_2__)
