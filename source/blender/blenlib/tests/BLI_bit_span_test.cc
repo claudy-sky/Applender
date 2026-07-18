@@ -415,6 +415,43 @@ TEST(bit_span, or_bools_into_bits)
   }
 }
 
+TEST(bit_span, OrBoolsIntoBitsSIMDChunkBoundaries)
+{
+  Vector<bool> bools(80, false);
+  for (const int i : bools.index_range()) {
+    bools[i] = (i % 5 == 0) || (i % 7 == 3);
+  }
+
+  BitVector<> bits(200, false);
+  constexpr int64_t start = 53;
+  /* Preserve an existing bit to verify that conversion uses OR semantics. */
+  bits[start + 1].set();
+  MutableBitSpan dst = MutableBitSpan(bits).slice(
+      IndexRange::from_begin_size(start, bools.size()));
+
+  EXPECT_TRUE(bits::or_bools_into_bits(bools, dst));
+  EXPECT_FALSE(bits[start - 1]);
+  EXPECT_FALSE(bits[start + bools.size()]);
+  for (const int i : bools.index_range()) {
+    EXPECT_EQ(bits[start + i].test(), bools[i] || i == 1);
+  }
+
+  Vector<bool> all_false(128, false);
+  BitVector<> false_bits(all_false.size(), false);
+  EXPECT_FALSE(bits::or_bools_into_bits(all_false, false_bits));
+
+  Vector<bool> padded_bools(80, false);
+  padded_bools[79] = true;
+  BitVector<> padded_bits(128, false);
+  const Span<bool> logical_bools = padded_bools.as_span().take_front(65);
+  MutableBitSpan logical_bits = MutableBitSpan(padded_bits).take_front(65);
+  /* The explicitly allowed padding participates in conversion and in the return value. */
+  EXPECT_TRUE(bits::or_bools_into_bits(logical_bools, logical_bits, 16));
+  EXPECT_FALSE(padded_bits[64]);
+  EXPECT_TRUE(padded_bits[79]);
+  EXPECT_FALSE(padded_bits[80]);
+}
+
 TEST(bit_span, to_index_ranges_small)
 {
   BitVector<> bits(10, false);
@@ -443,6 +480,27 @@ TEST(bit_span, to_index_ranges_all_ones)
 
   EXPECT_EQ(builder.size(), 1);
   EXPECT_EQ(builder[0], IndexRange(8765));
+}
+
+TEST(bit_span, ToIndexRangesSparseSIMDGroups)
+{
+  constexpr int64_t slice_start = 13;
+  BitVector<> storage(640, false);
+  for (const int64_t index : {0, 63, 64, 65, 66, 127, 256, 257, 298, 299, 300, 499}) {
+    storage[slice_start + index].set();
+  }
+
+  IndexRangesBuilderBuffer<int, 10> builder_buffer;
+  IndexRangesBuilder<int> builder(builder_buffer);
+  bits_to_index_ranges(BitSpan(storage).slice(slice_start, 500), builder);
+
+  ASSERT_EQ(builder.size(), 6);
+  EXPECT_EQ(builder[0], IndexRange::from_begin_size(0, 1));
+  EXPECT_EQ(builder[1], IndexRange::from_begin_size(63, 4));
+  EXPECT_EQ(builder[2], IndexRange::from_begin_size(127, 1));
+  EXPECT_EQ(builder[3], IndexRange::from_begin_size(256, 2));
+  EXPECT_EQ(builder[4], IndexRange::from_begin_size(298, 3));
+  EXPECT_EQ(builder[5], IndexRange::from_begin_size(499, 1));
 }
 
 }  // namespace blender::bits::tests

@@ -268,6 +268,40 @@ TEST(math_half, float_to_half_make_finite_array)
   EXPECT_EQ_ARRAY(exp, dst, 18);
 }
 
+TEST(math_half, array_chunk_boundaries)
+{
+  constexpr int max_size = 25;
+  float src[max_size + 2];
+  uint16_t half[max_size + 2];
+  float restored[max_size + 2];
+
+  for (int i = 0; i < max_size; i++) {
+    src[i + 1] = (float(i) - 12.0f) * 123.25f + 0.1f;
+  }
+
+  /* Offset both arrays by one element and vary the size across SIMD boundaries. */
+  for (int size = 0; size <= max_size; size++) {
+    for (int i = 0; i < max_size + 2; i++) {
+      half[i] = 0x5a5a;
+      restored[i] = 12345.0f;
+    }
+
+    math::float_to_half_array(src + 1, half + 1, size);
+    EXPECT_EQ(half[0], 0x5a5a);
+    EXPECT_EQ(half[size + 1], 0x5a5a);
+    for (int i = 0; i < size; i++) {
+      EXPECT_EQ(half[i + 1], math::float_to_half(src[i + 1]));
+    }
+
+    math::half_to_float_array(half + 1, restored + 1, size);
+    EXPECT_EQ(restored[0], 12345.0f);
+    EXPECT_EQ(restored[size + 1], 12345.0f);
+    for (int i = 0; i < size; i++) {
+      EXPECT_EQ(restored[i + 1], math::half_to_float(half[i + 1]));
+    }
+  }
+}
+
 #ifdef DO_PERF_TESTS
 
 /*

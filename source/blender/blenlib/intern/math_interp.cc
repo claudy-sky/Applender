@@ -52,6 +52,53 @@ template<enum eCubicFilter filter> static float4 cubic_filter_coefficients(float
   }
 }
 
+#if BLI_HAVE_ARM_NEON
+/** Load one packed RGBA8 texel and widen it to four float lanes. */
+BLI_INLINE float32x4_t load_uchar4_as_float_neon(const uchar *data)
+{
+  uint32_t packed;
+  memcpy(&packed, data, sizeof(packed));
+  const uint8x8_t bytes = vreinterpret_u8_u32(vdup_n_u32(packed));
+  const uint16x8_t words = vmovl_u8(bytes);
+  return vcvtq_f32_u32(vmovl_u16(vget_low_u16(words)));
+}
+
+/** Round and saturate four float lanes to one packed RGBA8 texel. */
+BLI_INLINE void store_uchar4_from_float_neon(uchar *output, const float32x4_t value)
+{
+  const int32x4_t integers = vcvtq_s32_f32(vaddq_f32(value, vdupq_n_f32(0.5f)));
+  const uint16x4_t words = vqmovun_s32(integers);
+  const uint8x8_t bytes = vqmovn_u16(vcombine_u16(words, vdup_n_u16(0)));
+  const uint32_t packed = vget_lane_u32(vreinterpret_u32_u8(bytes), 0);
+  memcpy(output, &packed, sizeof(packed));
+}
+
+template<eCubicFilter filter>
+BLI_INLINE void bicubic_interpolation_uchar_neon(
+    const uchar *src_buffer, uchar *output, int width, int height, float u, float v)
+{
+  if (!std::isfinite(u) || !std::isfinite(v)) {
+    memset(output, 0, sizeof(uchar[4]));
+    return;
+  }
+
+  const float4 wx = cubic_filter_coefficients<filter>(u - floorf(u));
+  const float4 wy = cubic_filter_coefficients<filter>(v - floorf(v));
+
+  float32x4_t result = vdupq_n_f32(0.0f);
+  for (int n = 0; n < 4; n++) {
+    const int y = wrap_coord(v - 1.0f + float(n), height, InterpWrapMode::Extend);
+    for (int m = 0; m < 4; m++) {
+      const int x = wrap_coord(u - 1.0f + float(m), width, InterpWrapMode::Extend);
+      const float weight = wx[m] * wy[n];
+      const uchar *sample = src_buffer + (int64_t(width) * y + x) * 4;
+      result = vaddq_f32(result, vmulq_n_f32(load_uchar4_as_float_neon(sample), weight));
+    }
+  }
+  store_uchar4_from_float_neon(output, result);
+}
+#endif
+
 #if BLI_HAVE_SSE4
 template<eCubicFilter filter>
 BLI_INLINE void bicubic_interpolation_uchar_simd(
@@ -123,7 +170,14 @@ BLI_INLINE void bicubic_interpolation(const T *src_buffer,
   [[assume(components <= 4)]];
 #endif
 
-#if BLI_HAVE_SSE4
+#if BLI_HAVE_ARM_NEON
+  if constexpr (std::is_same_v<T, uchar>) {
+    if (components == 4 && wrap_u == InterpWrapMode::Extend && wrap_v == InterpWrapMode::Extend) {
+      bicubic_interpolation_uchar_neon<filter>(src_buffer, output, width, height, u, v);
+      return;
+    }
+  }
+#elif BLI_HAVE_SSE4
   if constexpr (std::is_same_v<T, uchar>) {
     if (components == 4 && wrap_u == InterpWrapMode::Extend && wrap_v == InterpWrapMode::Extend) {
       bicubic_interpolation_uchar_simd<filter>(src_buffer, output, width, height, u, v);
@@ -227,7 +281,51 @@ BLI_INLINE uchar4 bilinear_byte_impl(const uchar *buffer, int width, int height,
   BLI_assert(buffer);
   uchar4 res;
 
-#if BLI_HAVE_SSE4
+#if BLI_HAVE_ARM_NEON
+  if (!std::isfinite(u) || !std::isfinite(v)) {
+    return uchar4(0);
+  }
+
+  const InterpWrapMode wrap = border ? InterpWrapMode::Border : InterpWrapMode::Extend;
+  const int x1 = wrap_coord(u, width, wrap);
+  const int x2 = wrap_coord(u + 1.0f, width, wrap);
+  const int y1 = wrap_coord(v, height, wrap);
+  const int y2 = wrap_coord(v + 1.0f, height, wrap);
+
+  if constexpr (border) {
+    if ((x1 < 0 && x2 < 0) || (y1 < 0 && y2 < 0)) {
+      return uchar4(0);
+    }
+  }
+
+  const uchar empty[4] = {0, 0, 0, 0};
+  const auto sample = [&](const int x, const int y) -> const uchar * {
+    if constexpr (border) {
+      if (x < 0 || y < 0) {
+        return empty;
+      }
+    }
+    return buffer + (int64_t(width) * y + x) * 4;
+  };
+
+  const float u_floor = floorf(u);
+  const float v_floor = floorf(v);
+  const float a = u - u_floor;
+  const float b = v - v_floor;
+  const float a_b = a * b;
+  const float ma_b = (1.0f - a) * b;
+  const float a_mb = a * (1.0f - b);
+  const float ma_mb = (1.0f - a) * (1.0f - b);
+
+  const float32x4_t rgba1 = vmulq_n_f32(load_uchar4_as_float_neon(sample(x1, y1)), ma_mb);
+  const float32x4_t rgba2 = vmulq_n_f32(load_uchar4_as_float_neon(sample(x1, y2)), ma_b);
+  const float32x4_t rgba3 = vmulq_n_f32(load_uchar4_as_float_neon(sample(x2, y1)), a_mb);
+  const float32x4_t rgba4 = vmulq_n_f32(load_uchar4_as_float_neon(sample(x2, y2)), a_b);
+  const float32x4_t rgba13 = vaddq_f32(rgba1, rgba3);
+  const float32x4_t rgba24 = vaddq_f32(rgba2, rgba4);
+  store_uchar4_from_float_neon(reinterpret_cast<uchar *>(&res), vaddq_f32(rgba13, rgba24));
+
+#elif BLI_HAVE_SSE4
   __m128 uvuv = _mm_set_ps(v, u, v, u);
   __m128 uvuv_floor = _mm_floor_ps(uvuv);
 

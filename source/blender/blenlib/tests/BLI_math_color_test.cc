@@ -186,6 +186,64 @@ TEST(math_color, linearrgb_to_srgb_uchar4_n)
   }
 }
 
+TEST(math_color, LinearRGBToSRGBUchar4ArrayBoundaries)
+{
+  constexpr int max_size = 19;
+  float linear_storage[max_size + 2][4];
+  for (int i = 0; i < max_size + 2; i++) {
+    linear_storage[i][0] = float((i * 17) % 29) / 19.0f - 0.2f;
+    linear_storage[i][1] = float((i * 11) % 31) / 17.0f;
+    linear_storage[i][2] = float((i * 7) % 23) / 13.0f;
+    linear_storage[i][3] = float((i * 5) % 17) / 16.0f;
+  }
+  const float matrix[3][3] = {
+      {0.75f, 0.125f, -0.05f}, {0.2f, 0.9f, 0.15f}, {0.05f, -0.025f, 0.8f}};
+
+  for (const int size : {4, 5, 7, 8, 9, 15, 16, 17, max_size}) {
+    for (const bool use_matrix : {false, true}) {
+      uchar srgb_storage[max_size + 2][4];
+      for (auto &pixel : srgb_storage) {
+        for (uchar &channel : pixel) {
+          channel = 0xcd;
+        }
+      }
+
+      const float (*input)[4] = &linear_storage[1];
+      uchar(*output)[4] = &srgb_storage[1];
+      const float (*transform)[3] = use_matrix ? matrix : nullptr;
+      linearrgb_to_srgb_uchar4_n(output, input, size, transform);
+
+      for (int i = 0; i < size; i++) {
+        float expected_float[4];
+        if (use_matrix) {
+          mul_v3_m3v3(expected_float, matrix, input[i]);
+        }
+        else {
+          copy_v3_v3(expected_float, input[i]);
+        }
+        linearrgb_to_srgb_v3_v3(expected_float, expected_float);
+        expected_float[3] = input[i][3];
+        uchar expected[4];
+        rgba_float_to_uchar(expected, expected_float);
+        for (int channel = 0; channel < 4; channel++) {
+          EXPECT_NEAR(expected[channel], output[i][channel], 1)
+              << "size " << size << " matrix " << use_matrix << " pixel " << i << " channel "
+              << channel;
+        }
+      }
+
+      for (int channel = 0; channel < 4; channel++) {
+        EXPECT_EQ(srgb_storage[0][channel], 0xcd);
+      }
+      for (int i = size + 1; i < max_size + 2; i++) {
+        for (int channel = 0; channel < 4; channel++) {
+          EXPECT_EQ(srgb_storage[i][channel], 0xcd);
+        }
+      }
+    }
+  }
+}
+
 TEST(math_color, BlendModeConsistency_SoftLight)
 {
   float fdst[4];

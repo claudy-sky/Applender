@@ -297,6 +297,25 @@ TEST(math_interp, BilinearCharFullyOutsideImage)
   EXPECT_EQ(exp, res);
 }
 
+TEST(math_interp, BilinearCharNonFiniteCoordinates)
+{
+  const uchar4 transparent(0);
+  EXPECT_EQ(transparent,
+            interpolate_bilinear_border_byte(
+                image_char[0][0], image_width, image_height, INFINITY, 1.0f));
+  EXPECT_EQ(transparent,
+            interpolate_bilinear_border_byte(
+                image_char[0][0], image_width, image_height, -INFINITY, 1.0f));
+  EXPECT_EQ(
+      transparent,
+      interpolate_bilinear_border_byte(image_char[0][0], image_width, image_height, NAN, 1.0f));
+  EXPECT_EQ(
+      transparent,
+      interpolate_bilinear_byte(image_char[0][0], image_width, image_height, INFINITY, 1.0f));
+  EXPECT_EQ(transparent,
+            interpolate_bilinear_byte(image_char[0][0], image_width, image_height, NAN, 1.0f));
+}
+
 TEST(math_interp, BilinearFloatFullyOutsideImage)
 {
   float4 res;
